@@ -7,7 +7,8 @@ no package manager, and not a single image, audio or model file on disk.
 > — MIT, © StarKnightt. The original game and the five prompts that produced it are entirely
 > upstream's work. This fork doubles the size of the map, adds a configurable garrison size,
 > removes the round timer, generates patrol routes instead of hand-placing them, adds a third
-> air jump and carries more reserve ammunition.
+> air jump, carries more reserve ammunition, lets more of the squad shoot at once, and adds a
+> second playable character who does not use guns.
 
 **[Play the original here](https://starknightt.github.io/operation-ironhold/)**
 
@@ -16,12 +17,16 @@ no package manager, and not a single image, audio or model file on disk.
 A garrison holds a container yard in Sector 7. Clear it. You pick how many are down there —
 anywhere from ten to a hundred — and there is no clock.
 
-The entire game — renderer setup, world generation, weapon handling, enemy AI, audio
-synthesis, post-processing and HUD — is about 6,500 lines of JavaScript and CSS inlined
-into a single 318 KB `index.html`. The only external resource is three.js r128, pulled
+You also pick *who walks in*. **Operator** is the original game: four weapons, 150 effective
+health, and a fight you can lose. **Dark Lord** is the same yard, the same squad and the same
+props, with a wand instead of a rifle and nine spells instead of four guns.
+
+The entire game — renderer setup, world generation, weapon handling, enemy AI, spellcasting,
+audio synthesis, post-processing and HUD — is about 8,300 lines of JavaScript and CSS inlined
+into a single 406 KB `index.html`. The only external resource is three.js r128, pulled
 from a CDN. Everything else is generated at runtime.
 
-It was built by an AI agent from five prompts, recorded verbatim in
+The original was built by an AI agent from five prompts, recorded verbatim in
 [PROMPTS.md](PROMPTS.md).
 
 ## Running it
@@ -45,6 +50,8 @@ will not play on a phone.
 
 ## Controls
 
+### Operator
+
 | Input | Action |
 | --- | --- |
 | `W` `A` `S` `D` | Move |
@@ -60,23 +67,50 @@ will not play on a phone.
 | Mouse wheel | Cycle weapons |
 | `Esc` | Pause |
 
+### Dark Lord
+
+| Input | Action |
+| --- | --- |
+| `W` `A` `S` `D` | Move |
+| Mouse | Look |
+| Left click | Cast the selected curse |
+| Right click | Hold for Protego |
+| `1` `2` `3` `4` | Avada Kedavra / Bombarda Maxima / Crucio / Sectumsempra |
+| Mouse wheel | Cycle curses |
+| `Q` | Tap to apparate; **hold** to travel as smoke |
+| `E` | Expelliarmus |
+| `F` | Levicorpus |
+| `C` | Petrificus Totalus |
+| `R` | Homenum Revelio |
+| `Space` | Jump; two air hops; **hold** after they are spent to hover |
+| `Esc` | Pause |
+
 ## The round
 
 Eliminate every hostile. The slider on the start screen sets how many, from 10 to 100, and
 defaults to 25; the value applies to the next round, including `REDEPLOY`. There is no time
 limit — the round ends when the last man is down, or when one of them puts you down.
 
-You start with 100 health and 50 armor, where armor absorbs half of incoming damage until it
-is gone. Neither regenerates and there are no pickups, so the 150 you start with is the whole
-budget however many hostiles you chose.
+As the Operator you start with 100 health and 50 armor, where armor absorbs half of incoming
+damage until it is gone. Neither regenerates and there are no pickups, so the 150 you start
+with is the whole budget however many hostiles you chose.
 
 Hostiles hold fire for the first three seconds so you can get your bearings, and a combat
-director caps the number shooting at you at any one moment to two. The rest keep
-manoeuvring. That single constraint is what keeps a firefight readable instead of
-collapsing into crossfire you cannot answer.
+director caps how many may shoot at any one moment. The rest keep manoeuvring. That single
+constraint is what keeps a firefight readable instead of collapsing into crossfire you
+cannot answer.
+
+That cap used to be a flat two, which was calibrated against a ten-man garrison and stayed
+two when the setting grew to a hundred — past about twenty hostiles the cap, not the squad,
+was the difficulty, and a yard holding fifty men played no differently from one holding
+twelve. It now rises with the garrison you chose: three at ten hostiles up to six at a
+hundred for the Operator, and seven up to ten for the Dark Lord, who can afford it. Standing
+in the open against a full hundred now costs about 21 damage per second instead of 11.
 
 Dying ends the round. The report screen shows eliminations, headshots, accuracy and time
-survived — the stopwatch still runs, it just is not a limit any more.
+survived — the stopwatch still runs, it just is not a limit any more. The Dark Lord's report
+counts spells cast and kills by curse instead of headshots and accuracy, because a curse does
+not miss and the number would always read 100%.
 
 ## Weapons
 
@@ -122,6 +156,68 @@ fully chained triple jump tops out around 2.7m. Holding `Space`
 while airborne near a ledge up to about 1.95m above your feet pulls you up over it, which is
 what gets you onto a container roof from flat ground and onto the sniper deck without the
 ramp.
+
+## Dark Lord
+
+The second character on the start screen. The map does not change, the props do not change and
+the squad does not change — only who is holding the other end of the fight.
+
+He carries 250 health, no armour, a shield, and health that comes back on its own a few
+seconds after the last round that hit him. This is deliberate and it is not subtle: he is
+meant to be the most dangerous thing in the yard, and standing motionless in the open against
+a hundred armed men takes about ten seconds to kill him. Against ten or twenty-five it does
+not kill him at all.
+
+| Key | Spell | What it does |
+| --- | --- | --- |
+| `1` | Avada Kedavra | Half-second wind-up, then a green beam that kills whatever it touches. No falloff, no headshot multiplier, no armour — none of it applies. Brings the entire yard down on you. |
+| `2` | Bombarda Maxima | A blast at the aim point: falloff damage in a 6.5m radius, and everyone inside it gets thrown. The containers do not move; the static world is merged and instanced, so there is nothing there to break. |
+| `3` | Crucio | Held, not tapped. He drops his rifle, goes down and screams — and the screaming carries, on the same propagation the gunfire alert uses. Holding a man under it is how you call the rest of the yard to a spot of your choosing. |
+| `4` | Sectumsempra | Seven hitscan samples fanned across the crosshair. Heavy damage plus a bleed that keeps running. Catches two men standing near each other. |
+| `Q` | Apparition | Tap for an instant hop up to 26m to wherever you are looking. Hold and you become a low black streak at 30 m/s for 0.8s, steerable with the mouse. |
+| `E` | Expelliarmus | Takes the rifle off him and throws it. He is then unarmed, and reacts accordingly. |
+| `F` | Levicorpus | Hoists him 2.5m into the air, upside down, swinging, for five seconds — then drops him, which hurts. |
+| `C` | Petrificus Totalus | Six seconds rigid. Cheapest thing on the list and one of the most useful. |
+| `R` | Homenum Revelio | An expanding shell that ticks once per soldier it reaches and lights him as a silhouette through the containers for five seconds. |
+| RMB | Protego | Held. Blocks everything from a 150-degree frontal arc. |
+
+**Protego is a shield, not a dome.** Every source of damage in the game already funnels through
+one function, so the shield is a single arc test inside it — which means it would cover anything
+added later without being told about it. The one thing it cannot do is stop a round in flight,
+because enemy fire is hitscan and resolved instantly; you get the flare on the shield and the
+damage simply never lands, which reads fine.
+
+**The Horcrux.** Once per round, dying does not end the round. He comes apart, reforms
+somewhere else on the map with 35 health, and every man in the yard feels it. At 250 health
+with a shield you will rarely see it, which is the point.
+
+**Apparition can never land you somewhere illegal, and it can put you on a roof.** The
+destination is clamped inside the fence, resolved to the surface actually being aimed at,
+searched outward for standing room *at that height*, then shoved out of anything still
+overlapping. Deliberately not routed through the reachability check the patrol generator uses:
+that one flood-fills from the player's spawn at ground level, so no container roof or warehouse
+deck is in it, and delegating to it meant a hop aimed at a roof got snapped into the lane beside
+it and blinking while stood on one dropped you off. The test exists to stop a soldier being
+stranded where he cannot walk out, which is not a hazard for someone with a glide and a triple
+jump. Verified at zero bad landings — outside the fence, inside a prop, sunk into the ground, or
+still stuck after a full second of settling physics — across 2,500 blinks, 400 smoke flights and
+300 Horcrux relocations, with 15% of blinks landing above ground level and the highest at 8.2m.
+
+**Flight is a glide, not free ascent.** Once the air hops are spent, holding `Space` cuts gravity
+to a sixth and floors the sink rate at 1.7 m/s, with enough air control to steer. You gain height
+with the three jumps and reposition with apparition; twenty seconds of held throttle tops out at
+7.5m and cannot leave the yard, so no second altitude clamp was needed.
+
+**The mood is uniforms only.** No geometry moved. The light rig comes down — sun to 52%, sky fill
+and bounce to 60% — the haze thickens by a third, and the composite shader gains a grade that
+pulls 40% of the colour out, runs the shadows cold and takes the exposure down. Because the post
+pass grades the sky along with everything else, the fog stays the sky's own colour and there is
+no seam at the horizon.
+
+**The incantation.** There is no voice actor and no audio files, so the whisper under every cast
+is built the way the guns are: three sibilant noise bursts on a falling bandpass with the Q wound
+up, staggered so it does not read as one flat hiss, over a low formant to put a throat behind it.
+It is nowhere near words. The ear files it as a whisper anyway.
 
 ## The map
 
@@ -206,6 +302,14 @@ before. The top of the slider is deliberately past what a mid-range machine will
 the dynamic resolution scaler will not rescue it either, since the cost is draw-call submission
 and CPU rather than fill.
 
+Dark Lord mode is close to free on top of that. The whole spell layer — cooldowns, the wand
+ember, the shield, the reveal shell, the silhouettes and the pooled cast lights — measures
+0.6 to 0.7ms per frame with a hundred hostiles all revealed at once, and costs exactly one
+extra draw call however many silhouettes are lit, because all of them are instances of one box
+in a single `InstancedMesh` sized to three per soldier. The status effects are cheaper than the
+AI they replace: a petrified or hoisted man returns from `updateEnemy` before perception,
+pathing or tactics run at all.
+
 Doubling the yard also doubles the per-cell work in two load-time passes. The navigation flood
 fill goes from 14,641 cells to 29,241, which is 14ms. The patrol-anchor scan over the upper deck
 needs a downward raycast per cell and would have been a 100ms-plus stall, so it samples at 2m
@@ -220,7 +324,17 @@ shadows off distant geometry, which on a yard with 120m sightlines is the more v
 
 ## Implementation notes
 
-Six things are worth knowing before modifying `index.html`.
+Seven things are worth knowing before modifying `index.html`.
+
+**`InstancedMesh.setColorAt` sizes its buffer from the wrong number in r128.** The
+implementation is `this.instanceColor === null && (this.instanceColor = new
+InstancedBufferAttribute(new Float32Array(3 * this.count), 3))` — `this.count` is the *draw*
+count, not `instanceMatrix.count`. The Homenum Revelio silhouette mesh starts at `count = 0` so
+that nothing draws until something is revealed, so the first `setColorAt` allocated a
+zero-length array; every colour write after that silently ran past the end, and because
+`instanceColor` was then non-null the shader still compiled with `USE_INSTANCING_COLOR` against
+an empty attribute. The draw call was issued every frame and produced no pixels whatsoever.
+Allocate `instanceColor` by hand at full capacity before anything touches it.
 
 **No environment map.** three.js renders a metal with nothing to reflect as near-black, so
 every material stays close to dielectric (`metalness` under about 0.2) and fakes metal
