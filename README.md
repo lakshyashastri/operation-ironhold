@@ -82,6 +82,7 @@ will not play on a phone.
 | `F` | Levicorpus |
 | `C` | Petrificus Totalus |
 | `R` | Homenum Revelio |
+| `X` | Imperio |
 | `Space` | Jump; two air hops; **hold** after they are spent to hover |
 | `Esc` | Pause |
 
@@ -174,11 +175,12 @@ not kill him at all.
 | `2` | Bombarda Maxima | A blast at the aim point: falloff damage in a 6.5m radius, and everyone inside it gets thrown. The containers do not move; the static world is merged and instanced, so there is nothing there to break. |
 | `3` | Crucio | Held, not tapped. He drops his rifle, goes down and screams — and the screaming carries, on the same propagation the gunfire alert uses. Holding a man under it is how you call the rest of the yard to a spot of your choosing. |
 | `4` | Sectumsempra | Seven hitscan samples fanned across the crosshair. Heavy damage plus a bleed that keeps running, and it takes its victims apart — see below. |
-| `Q` | Apparition | Tap for an instant hop up to 26m. Hold and you become a low black streak, steerable with the mouse, for as long as you keep holding — and the yard slows to a third of speed around you while you do. |
+| `Q` | Apparition | Tap and you arrive wherever you are looking, at any distance the yard allows. Hold and you become a low black streak, steerable with the mouse, for as long as you keep holding — and the yard slows to a third of speed around you while you do. |
 | `E` | Expelliarmus | Takes the rifle off him and throws it. He is then unarmed, and reacts accordingly. |
 | `F` | Levicorpus | Hoists him 2.5m into the air, upside down, swinging, for five seconds — then drops him, which hurts. |
 | `C` | Petrificus Totalus | Six seconds rigid. Cheapest thing on the list and one of the most useful. |
 | `R` | Homenum Revelio | An expanding shell that ticks once per soldier it reaches and lights him as a silhouette through the containers for five seconds. |
+| `X` | Imperio | Takes a man and gives him back to the yard pointing the other way. He keeps his rifle, his cover sense and his burst discipline; the only thing that changes is who he is trying to kill. Unlimited, and undetectable until he draws blood — see below. |
 | RMB | Protego | Held. Blocks everything from a 150-degree frontal arc. |
 
 **Protego is a shield, not a dome.** Every source of damage in the game already funnels through
@@ -202,6 +204,65 @@ stranded where he cannot walk out, which is not a hazard for someone with a glid
 jump. Verified at zero bad landings — outside the fence, inside a prop, sunk into the ground, or
 still stuck after a full second of settling physics — across 2,500 blinks, 400 smoke flights and
 300 Horcrux relocations, with 15% of blinks landing above ground level and the highest at 8.2m.
+
+**A blink has no range limit, and the two interesting parts of removing it were not the
+range.** The first is that the aiming ray uses one shared raycaster, and every other spell
+leaves its own reach on it — Petrify a man four metres away and a blink that simply *deleted*
+its cap would inherit 3.55m and go nowhere, until you cast something else. So the reach is
+reassigned rather than removed. That failure is invisible to any test that exercises apparition
+on its own, which is exactly how apparition had been tested.
+
+The second is height. The destination's ground is resolved by a downward probe that is 90m
+long, and the aim height used to be extrapolated along the ray — fine when the ray stopped at
+26m, unbounded once it does not. Looking up 45° from a container stack produced an aim height of
+92m, the probe found no ground at all, the search fell back to y=0, and you were quietly dumped
+off the stack you were standing on into the lane beside it, at full cooldown cost. Measured
+across 2,730 elevated upward blinks: the naive version pushes the aim height to **129.6m and
+fails to find ground in 1,137 of them (42%)**; keeping the height you already had on the
+no-hit branch caps it at **11.8m with zero failures**. A random-stance sweep asserting "the
+destination is unblocked" passes in both cases — the destination *is* unblocked, just at the
+wrong altitude, and there is nothing to compare it against unless you start somewhere high.
+
+The trail keeps its budget. The particle count along a rope is already clamped at 1,500, which
+binds from 25m up, so the fix for a 100m blink is girth rather than count: the tube narrows with
+distance, gathering the same particles into a tighter cord. Raising the count instead would wrap
+the 4,200-slot ring inside a single call and erase the departure plume before a frame was drawn.
+One blink costs 1,892 particles at any distance, and never wraps.
+
+**Imperio.** One man, on `X`, for 26 seconds, and there is no limit on how many you hold at
+once. He keeps everything that made him dangerous — cover selection, flanking, burst discipline,
+reload, the obstacle whiskers — because the implementation does not give him a new brain. It
+generalises the one question the old brain never had to ask: *who am I trying to kill.* Answer
+that with a target rather than an assumption and the entire existing soldier AI becomes the
+puppet AI, unchanged.
+
+Three rules make it a fight rather than a turret:
+
+- **He is undetectable until he draws blood.** The squad walks with him. The moment one of his
+  rounds actually lands on a squadmate — measured at the damage, not at the trigger, so a puppet
+  who misses for five seconds stays anonymous for five seconds — he is exposed, the men within
+  26m turn on him, and somebody says so on the radio. That first callout is the payoff.
+- **Puppets spare each other.** While any un-charmed man is alive a puppet will only ever target
+  an un-charmed man. Only when none are left do they turn on one another.
+- **Their kills are your kills.** Every round routes through the same damage funnel the player's
+  does, so the kill feed, the objective counter and the win check work without knowing Imperio
+  exists. A yard that has run out of un-charmed men still finishes.
+
+The nastiest bug this could have shipped with is not in any of that. `damageEnemy` had no
+dead-check, and a corpse sits at exactly zero health — so one more round takes it negative and
+re-enters `killEnemy`, incrementing the kill counter a second time for the same man. Nothing
+would show on screen; the body is already down and its hitboxes are already gone. Only the
+counter drifts, past the objective, and the round ends in a *win* with men still standing. The
+invariant worth keeping if nothing else survives is that the kill count equals the number of
+corpses — it holds trivially today, which is why nobody writes it down.
+
+A second one, subtler: a soldier's "have I lost contact" timer measures seconds since he last
+saw **the player**, and it is read in four places. Left alone, every puppet more than 73m from
+you — no walls required, that is just the sight range on a 120m diagonal — quietly dropped back
+onto his patrol route seven seconds later with the curse still running, and his nameplate went
+white. The feature worked for precisely as long as you were watching it. Verified fixed with the
+player parked 62-68m away and provably unable to be seen for 1,700 consecutive frames: the
+puppet holds combat, and holds his target, for the full 26 seconds.
 
 **Sectumsempra dismembers.** Head, both arms and both legs come off and tumble away along the
 axis of the cut, with the torso spinning off separately. The pieces are the soldier's *own* rig

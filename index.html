@@ -1018,6 +1018,15 @@ const SFX = (function(){
     if(!ready) return;
     noise({type:'lowpass', freq:260+k*520, gain:0.05+k*0.07, dur:0.30, atk:0.08});
   }
+  /* Imperio does not crack or bang — nothing else in the yard is meant to notice
+     it. A low sine settling downward under a long whisper: the sound of somebody
+     going quiet rather than of something being fired. */
+  function imperio(pan){
+    parseltongue(0.20, 0.62);
+    tone({type:'sine', f0:190, f1:74, dur:0.85, gain:0.11, lp:900, pan, verb:0.55});
+    tone({type:'triangle', f0:96, f1:52, dur:1.05, gain:0.06, lp:600, pan, delay:0.06, verb:0.6});
+    noise({type:'lowpass', freq:520, sweep:-260, gain:0.05, dur:0.70, atk:0.12, pan, verb:0.5});
+  }
   function protegoUp(){
     tone({type:'sine', f0:320, f1:760, dur:0.24, gain:0.10, lp:3000, verb:0.35});
     noise({type:'bandpass', freq:2600, q:5, gain:0.07, dur:0.20, atk:0.03});
@@ -1050,7 +1059,7 @@ const SFX = (function(){
            heartbeat, damageTaken, alarm, suspend, resume,
            parseltongue, killingCurse, bombarda, crucioLoop, scream, sectum,
            disarm, petrify, levitate, apparate, flightWind, protegoUp, protegoHit, sever,
-           revealPing, revelio, horcrux };
+           revealPing, revelio, horcrux, imperio };
 })();
 
 /* =========================================================================
@@ -3950,12 +3959,20 @@ function makeSmokeSystem(count){
   const data = new Array(count);
   for (let i=0;i<count;i++)
     data[i] = { life:0, max:1, vx:0,vy:0,vz:0, drag:1.2, buoy:0.4, swirl:0, size:1, grow:0, fade:1, seed:0 };
-  return { geo, pts, data, count, head:0, pos, col, siz, alp, sed };
+  return { geo, pts, data, count, head:0, pos, col, siz, alp, sed, evictions:0 };
 }
 const PS_SMOKE = makeSmokeSystem(4200);
 
 function spawnSmoke(x,y,z, vx,vy,vz, o){
-  const s = PS_SMOKE, i = s.head; s.head = (s.head+1) % s.count;
+  const s = PS_SMOKE, i = s.head;
+  /* The pool is a ring, so overrunning it never throws — it silently overwrites
+     whatever is still alive, and a rope drawn over its own departure plume looks
+     exactly like a rope drawn correctly. This counter is the only observable
+     that moves when the smoke budget is genuinely blown, which is why it exists
+     at all: uncapping the blink made the length of a trail unbounded, and
+     "did smoke appear" cannot tell the two cases apart. */
+  if (s.data[i].life > 0) s.evictions++;
+  s.head = (s.head+1) % s.count;
   s.pos[i*3]=x; s.pos[i*3+1]=y; s.pos[i*3+2]=z;
   const c = o.color;
   s.col[i*3]=c[0]; s.col[i*3+1]=c[1]; s.col[i*3+2]=c[2];
@@ -5077,13 +5094,21 @@ function makeTag(name){
   spr.scale.set(1.55,0.46,1);
   spr.position.y = 2.16;
   const ctx = c.getContext('2d');
+  /* Charm is a latch on the tag rather than a third argument to draw(), because
+     draw() is called from four places and one of them is damageEnemy — every
+     non-fatal hit. A defaulted parameter would repaint your puppet's plate
+     hostile red the instant one of his own squad lands a round on him, and
+     nothing would ever repaint it back, at exactly the moment the player most
+     needs to know whose side he is on. */
+  let lastHp = 100, lastAlert = false, charmed = false;
   function draw(hp, alerted){
+    lastHp = hp; lastAlert = alerted;
     ctx.clearRect(0,0,256,76);
     ctx.font = 'bold 27px "Segoe UI", Arial, sans-serif';
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.lineWidth = 5; ctx.strokeStyle='rgba(0,0,0,.85)';
     ctx.strokeText(name,128,22);
-    ctx.fillStyle = alerted ? '#ff6a58' : '#e9eef3';
+    ctx.fillStyle = charmed ? '#b06aff' : (alerted ? '#ff6a58' : '#e9eef3');
     ctx.fillText(name,128,22);
     const bx=40,bw=176,by=44,bh=13;
     ctx.fillStyle='rgba(0,0,0,.72)'; ctx.fillRect(bx-2,by-2,bw+4,bh+4);
@@ -5097,7 +5122,8 @@ function makeTag(name){
     t.needsUpdate = true;
   }
   draw(100,false);
-  return { sprite:spr, draw, tex:t };
+  return { sprite:spr, draw, tex:t,
+           setCharm(v){ if (charmed === v) return; charmed = v; draw(lastHp, lastAlert); } };
 }
 
 /* patrol routes
@@ -5335,6 +5361,24 @@ function spawnEnemies(){
       knock:new THREE.Vector3(),   // Bombarda throw, integrated then damped out
       revealed:0, pulsed:false,    // Homenum Revelio: silhouette seconds left, and wave bookkeeping
       cutOpen:false, gibbed:false, cutDir:null,  // Sectumsempra marked him, along which axis, and whether he has come apart
+      /* Imperio. impTgt and impHunter hold other soldiers, which is the first
+         enemy-to-enemy reference in the file — see killEnemy, which sweeps them.
+         Named impHunter and not `hunting` on purpose: `hunt` beside it is a
+         number, and one typo away is `e.hunt = Math.max(e.hunt, 9)` against an
+         object, which yields NaN and locks the man in COMBAT for the round with
+         no error to show for it. */
+      imperio:0,                   // seconds of curse left, 0 = his own man
+      impTgt:null,                 // the soldier he is engaging
+      impRetgt:0,                  // countdown to re-picking one
+      exposed:false,               // has he been caught firing on his own side
+      impHunter:null,              // for an UNcharmed man: the puppet he was retasked onto
+      /* Two perception flags, because canSee is read with three different
+         meanings — the minimap, the shooter cap and the fight-or-search fork —
+         and only one of them is about the player once a man can have another
+         target. seesPlayer stays player-keyed; seesTgt is about whoever he is
+         actually fighting. */
+      seesPlayer:false, seesTgt:false, losTimer2:0,
+      lostTgt:0,                   // seconds since he last saw whoever he is fighting
     };
     parts.hbHead.userData = {enemy:e, part:'head'};
     parts.hbBody.userData = {enemy:e, part:'body'};
@@ -5718,7 +5762,7 @@ function drawMinimap(){
       ctx.moveTo(p.x+0.8,p.z-0.8); ctx.lineTo(p.x-0.8,p.z+0.8); ctx.stroke();
       continue;
     }
-    const spotted = e.canSee || e.alerted;
+    const spotted = e.seesPlayer || e.alerted;
     ctx.fillStyle = spotted ? '#ff3b30' : 'rgba(255,120,90,.42)';
     ctx.beginPath(); ctx.arc(p.x,p.z, spotted?1.5:1.1, 0, 7); ctx.fill();
     if (spotted){
@@ -5754,7 +5798,7 @@ let sensScale = 1;              // shrinks with ADS zoom so aim stays 1:1 on scr
    is actually running — blanket-preventing KeyC and KeyF would have eaten
    Ctrl/Cmd+C and Ctrl/Cmd+F on the start screen and the debrief, in both modes. */
 const HELD_CODES = ['Space','KeyR','Digit1','Digit2','Digit3','Digit4','KeyV'];
-const DARK_CODES = ['KeyQ','KeyE','KeyF','KeyC'];
+const DARK_CODES = ['KeyQ','KeyE','KeyF','KeyC','KeyX'];
 const swallow = e => !e.ctrlKey && !e.metaKey && !e.altKey &&
                      (HELD_CODES.includes(e.code) ||
                       (isDark() && G.running && DARK_CODES.includes(e.code)));
@@ -5779,6 +5823,7 @@ addEventListener('keydown', e=>{
     if (e.code==='KeyF') triggerAbility('levi');
     if (e.code==='KeyC') triggerAbility('petrify');
     if (e.code==='KeyR') triggerAbility('revelio');
+    if (e.code==='KeyX') triggerAbility('imperio');
     return;
   }
   if (e.code==='KeyR') startReload();
@@ -5839,7 +5884,7 @@ document.addEventListener('pointerlockchange', ()=>{
     G.paused = true; G.running=false;
     /* Q is edge-detected across frames, so a pause taken with it held left
        qDown latched — the first frame after resuming read it as a release and
-       handed out a free 26m blink */
+       handed out a free blink, which now means one clear across the yard */
     /* Every raw key too, not just the latch. Clearing qDown while keys.KeyQ
        stayed true meant the first frame after resuming read a fresh hold that
        nobody had pressed, and launched a flight the player could not end until
@@ -6068,11 +6113,20 @@ function fireWeapon(){
    left — which is both unconvincing and a way to lose on the clock hunting for
    the last man. Anyone inside earshot walks the shot in instead.
    ------------------------------------------------------------------------- */
-function alertSquad(radius, spread, line, chance){
-  const px = player.pos.x, pz = player.pos.z;
+/* atX/atZ name the point the noise came from. They default to the player, which
+   is what every original caller means and what this function used to assume
+   outright — but a blink is heard where you left, not where you arrived, and a
+   man shot by one of your own puppets heard it from the puppet. Omitting them
+   reproduces the old two reads of player.pos exactly. */
+function alertSquad(radius, spread, line, chance, atX, atZ){
+  const px = (atX === undefined ? player.pos.x : atX);
+  const pz = (atZ === undefined ? player.pos.z : atZ);
   /* as the squad thins the survivors stop being a patrol and start being a
-     manhunt — otherwise the last man is a hide-and-seek chore on the clock */
-  const alive = enemies.reduce((n,e)=> n + (e.dead?0:1), 0);
+     manhunt — otherwise the last man is a hide-and-seek chore on the clock.
+     Charmed men are not survivors for this purpose: they are not looking for
+     you, so counting them would hold the manhunt off while a yard of puppets
+     wandered around fighting each other. */
+  const alive = enemies.reduce((n,e)=> n + ((e.dead || e.imperio > 0) ? 0 : 1), 0);
   if (alive <= 3) radius = Math.max(radius, DIAG*2);
   let called = false;
   for (const e of enemies){
@@ -6102,21 +6156,47 @@ function alertToGunfire(radius){
                                    'GUNFIRE, SWEEPING '+bearingWord(e)]), 0.7);
 }
 
-function damageEnemy(e, dmg, head, dir, point){
+/**
+ * `from` is the soldier who fired, when the shooter was one. Absent means the
+ * player, which is every original caller.
+ *
+ * The dead guard on the first line is the most load-bearing line in the Imperio
+ * change. A corpse sits at hp exactly 0, so one more round takes it negative and
+ * re-enters killEnemy — which increments G.kills again, re-runs the kill feed and
+ * re-fires the win check. Today the invariant is held purely by caller
+ * discipline: seven call sites all happen to know their man is alive. A puppet
+ * cannot know, because the burst counter is decremented inside updateEnemy
+ * without re-consulting anything — the same hazard dropRifle was written for. And
+ * nothing on screen would show it: the body is already down, the hitboxes are
+ * already gone. Only G.kills drifts, past G.total, and the round ends in a win
+ * with men still standing.
+ */
+function damageEnemy(e, dmg, head, dir, point, from){
+  if (e.dead) return false;
   e.hp -= dmg;
   e.flinch = Math.min(1, e.flinch + (head?0.9:0.55));
-  e.alerted = true;
-  e.lastSeen = 0;
+  if (!from){
+    /* lastSeen means "seconds since I saw the PLAYER", and four other places
+       read it as a live contact flag. Zeroing it for a man being shot by a
+       puppet tells him he has eyes on you: he squares up to a player 70m away
+       while being shot in the back (the exact 'enemies shooting backwards' bug
+       the whisker code was written to fix), arms suppressive fire into a
+       lastKnown he has never written — the world origin — and never de-alerts. */
+    e.alerted = true;
+    e.lastSeen = 0;
+  } else if (from.imperio > 0){
+    exposePuppet(from, e);
+  }
   if (e.state===ST.PATROL){ e.state=ST.ALERT; e.reactT = rand(0.14,0.30); }
   if (e.hp<=0){
-    killEnemy(e, head, dir);
+    killEnemy(e, head, dir, from);
     return true;
   }
   e.tag.draw(e.hp, true);
   return false;
 }
 
-function killEnemy(e, head, dir){
+function killEnemy(e, head, dir, from){
   e.dead = true; e.hp=0; e.state=ST.DEAD; e.deathT=0;
   /* Hand the body back to gravity. A man killed while hoisted by Levicorpus was
      left hanging at 2.5m with the death animation playing in mid-air, and the
@@ -6132,16 +6212,38 @@ function killEnemy(e, head, dir){
   e.deathDir = (dir? Math.atan2(dir.x,dir.z) : 0);
   e.tag.sprite.visible = false;
   rebuildHitMeshes();
+  /* The charm dies with him, and so does every reference anyone else was holding
+     to him. This is the only choke point that covers all eight ways a man can
+     die — rifle, five spell paths, a bleed tick fired from inside updateEnemy
+     mid-loop, and now another soldier's round. It matters most for the
+     dismemberment case: killEnemy hands e.obj to the gib integrator, so a stale
+     reference does not read as a corpse, it reads as a tumbling torso arcing
+     through the air that somebody is still trying to aim at and can never kill,
+     because his hitboxes were stripped two lines ago. */
+  e.imperio = 0; e.impTgt = null; e.impHunter = null; e.exposed = false;
+  e.tag.setCharm(false);
+  for (const o of enemies){
+    if (o.impTgt === e){ o.impTgt = null; o.impRetgt = 0; o.burst = 0; o.suppress = 0; }
+    if (o.impHunter === e) o.impHunter = null;
+  }
   G.kills++;
   if (head) G.headshots++;
-  killFeed(e.name, head);
-  SFX.killChime();
+  /* A kill the player did not make is still a kill — it counts, it clears a
+     hitbox and it moves the win check, which is what lets a yard full of puppets
+     finish a round. What it must not do is take over the player's feedback
+     channel: at two or three puppet kills a second the edge glow strobes on a
+     timer per kill, the flash never decays, the chime stacks, and a five-line
+     feed that hard-codes YOU as the attacker fills with kills you did not make. */
+  if (!from){
+    killFeed(e.name, head);
+    SFX.killChime();
+    G.killFlash = 1;
+    UI.edgeGlow.style.opacity = '0.9';
+    setTimeout(()=>UI.edgeGlow.style.opacity='0', 130);
+  }
   SFX.enemyDeath(clamp((e.obj.position.x-camera.position.x)/14,-1,1),
                  e.obj.position.distanceTo(camera.position));
-  G.killFlash = 1;
   UI.killCount.textContent = G.kills;
-  UI.edgeGlow.style.opacity = '0.9';
-  setTimeout(()=>UI.edgeGlow.style.opacity='0', 130);
   /* A man going down is louder than the shot that did it, and the squad's reach
      grows as it shrinks — the survivors come to you. Two things this has to be
      independent of: the squad size, since a fixed metres-per-kill went map-wide
@@ -6150,9 +6252,18 @@ function killEnemy(e, head, dir){
      were metres chosen so the radius crossed an 85m diagonal near the end. Both
      are now fractions — of the squad, and of the diagonal — so the curve has the
      same shape at any count on any size of yard. */
+  /* Anchored at the body when somebody other than the player did it, or every
+     man your puppets drop would retask the garrison onto YOU, at a radius that
+     grows to map-wide by the time the round is three-quarters done. Omitted for
+     the player's own kills, which keeps the operator path exactly as it was. */
   alertSquad(DIAG*(0.35 + (G.kills/G.total)*0.83), 5,
              ex => pick([e.name+' IS DOWN — '+bearingWord(ex), 'MAN DOWN, CONVERGE',
-                         'WE LOST '+e.name+', PUSH IN']), 0.85);
+                         'WE LOST '+e.name+', PUSH IN']), 0.85,
+             from ? e.obj.position.x : undefined,
+             from ? e.obj.position.z : undefined);
+  /* the debrief counts men killed by an Unforgivable, not casts of one — and a
+     puppet is Imperio's kill as much as a green flash is Avada Kedavra's */
+  if (from && from.imperio > 0) SP.unforgivable++;
   /* After the status clearing above — a man hoisted by Levicorpus has to be put
      back on his feet and un-rotated before he can be taken apart, or the pieces
      inherit a 2.5m hoist and an upside-down model. Before the win check, so the
@@ -6223,9 +6334,72 @@ function enemyEye(e, out){
 function playerChest(out){
   return out.set(player.pos.x, player.pos.y + player.height*0.62, player.pos.z);
 }
-function hasLOS(e){
+
+/* ---------------------------------------------------------------------------
+   Who is this soldier trying to kill?
+
+   The AI was written when there was only one possible answer, so the player is
+   read directly in six places. Imperio needs a second answer, and the cheapest
+   honest way to get one is to name the question: generalise the target and the
+   whole existing brain — cover, strafing, flanking, burst discipline, reload,
+   whiskers, stuck recovery — becomes the puppet's brain for nothing.
+
+   A sentinel object rather than null for "the player", because null has to mean
+   something else. Fold the two together and the endgame kills you: two men left,
+   both charmed, one shoots the other, G.kills lands one short of G.total so the
+   win check never fires, and the survivor has nobody left to fight. If null meant
+   the player he would turn round and shoot you — with e.engage maxed, which is
+   the tightest cone this game can produce. So there are three answers, and they
+   are all distinct: TGT_PLAYER, another soldier, or null meaning stand down.
+   --------------------------------------------------------------------------- */
+const TGT_PLAYER = Object.freeze({ isPlayer:true });
+function targetOf(e){
+  if (!(e.imperio > 0)){
+    /* an un-charmed man is normally yours to worry about, unless he has been
+       retasked onto a puppet he watched shoot one of his own */
+    const h = e.impHunter;
+    if (h && !h.dead && !h.gibbed && h.imperio > 0) return h;
+    if (h) e.impHunter = null;
+    return TGT_PLAYER;
+  }
+  const t = e.impTgt;
+  if (t && !t.dead && !t.gibbed) return t;
+  e.impTgt = null;
+  return null;                    // charmed with nobody to fight: idle, never you
+}
+/* Writes the aim point for whatever targetOf returns, or null when idle. 1.20 is
+   the hbBody centre taken off the real geometry, not guessed — and it is already
+   the height the suppressive-fire path aims at. */
+function targetChest(e, out){
+  const t = targetOf(e);
+  if (t === TGT_PLAYER) return playerChest(out);
+  if (!t) return null;
+  return out.set(t.obj.position.x, t.obj.position.y + 1.20, t.obj.position.z);
+}
+/* Nearest un-charmed man; other puppets only once no un-charmed man is left.
+   Allocates nothing and touches no shared scratch vector, which matters because
+   it is called from inside updateEnemy where _ePos is live. */
+function pickPuppetTarget(e, avoid){
+  let best=null, bestD=Infinity, bestPup=null, bestPD=Infinity;
+  for (const o of enemies){
+    if (o === e || o.dead || o.gibbed || o === avoid) continue;
+    const d = o.obj.position.distanceToSquared(e.obj.position);
+    if (o.imperio > 0){ if (d < bestPD){ bestPD=d; bestPup=o; } }
+    else if (d < bestD){ bestD=d; best=o; }
+  }
+  const pick = best || bestPup || null;
+  /* `avoid` is a preference, not a rule: when the man he cannot get at is the
+     only one left, he keeps him rather than standing down. */
+  return (pick || !avoid) ? pick : pickPuppetTarget(e);
+}
+
+function hasLOS(e, tgt){
   enemyEye(e,_eEye);
-  playerChest(_ePos);
+  const t = (tgt === undefined ? TGT_PLAYER : tgt);
+  if (!t) return false;
+  const tgtIsEnemy = t !== TGT_PLAYER;
+  if (tgtIsEnemy) _ePos.set(t.obj.position.x, t.obj.position.y + 1.20, t.obj.position.z);
+  else playerChest(_ePos);
   _eDir.subVectors(_ePos,_eEye);
   const dist = _eDir.length();
   /* How far a soldier will spot you. Held at the same fraction of the yard it was
@@ -6234,7 +6408,19 @@ function hasLOS(e){
      be seen from and turned every approach into a walk. */
   if (dist > DIAG*0.61) return false;
   _eDir.divideScalar(dist);
-  /* field of view (skip when already alerted — they've been told where you are) */
+  /* Field of view, skipped once alerted — they have been told where you are.
+     This deliberately applies to a soldier target as well.
+
+     An earlier version forced the cone on for soldier targets, on the theory
+     that it protected the curse's ignorance phase. It does not: an un-charmed
+     man never takes a puppet as his target at all until exposePuppet hands him
+     one, so the phase is enforced by who he is aiming at, not by whether he
+     could see. What the extra cone did instead was deadlock two men who had lost
+     sight of each other — each walks to where the other was, and the whisker
+     code points a man along his path rather than at his quarry while he has no
+     contact, so both faced their own line of travel and neither could ever
+     reacquire. Two soldiers five metres apart either side of a crate circled it
+     for a minute and a half without a shot. */
   if (!e.alerted){
     const fwd = new THREE.Vector3(-Math.sin(e.yaw),0,-Math.cos(e.yaw));
     if (fwd.dot(_eDir) < 0.20) return false;
@@ -6262,9 +6448,12 @@ function hasLOS(e){
  * is a man shooting a box. One ray, and only when he is about to start a burst.
  */
 const _mzTmp = new THREE.Vector3();
-function muzzleClear(e){
+function muzzleClear(e, tgt){
   e.p.gunMuzzle.getWorldPosition(_mzTmp);
-  playerChest(_ePos);
+  const t = (tgt === undefined ? TGT_PLAYER : tgt);
+  if (!t) return false;
+  if (t === TGT_PLAYER) playerChest(_ePos);
+  else _ePos.set(t.obj.position.x, t.obj.position.y + 1.20, t.obj.position.z);
   _revDir.subVectors(_mzTmp, _ePos);
   const len = _revDir.length();
   if (len < 0.8) return true;
@@ -6274,14 +6463,39 @@ function muzzleClear(e){
   return losRay.intersectObjects(worldSolid, false).length === 0;
 }
 
-function enemyShoot(e, atPoint){
+/* The aim point, held across the whole shot. Its own vector rather than _ePos,
+   because with a per-target aim the shared scratch is no longer guaranteed to
+   still hold what this function wrote into it. */
+const _shotTgt = new THREE.Vector3();
+/**
+ * One rifle round.
+ *
+ * This function resolves its victim TWICE and independently: once to decide
+ * where to point (the aim block below) and once to decide who got hit (the
+ * cylinder test further down). Retargeting only the first — which is the obvious
+ * edit, and matches the shape of every other change in this pass — produces
+ * puppets that flash, crack, tracer and pan perfectly and injure nobody, while
+ * still occasionally shooting the player whenever their line happens to pass
+ * near him. Both halves take `tgt`, or neither should.
+ */
+function enemyShoot(e, atPoint, tgt){
+  const t = (tgt === undefined ? TGT_PLAYER : tgt);
+  if (!t) return;
+  const tgtIsEnemy = t !== TGT_PLAYER;
   enemyEye(e,_eEye);
   const muzzle = _eEye.clone();
   e.p.gunMuzzle.getWorldPosition(muzzle);
-  playerChest(_ePos);
-  const aim = atPoint ? _tmpAim.set(atPoint.x, 1.2, atPoint.z) : _ePos;
-  const dist = muzzle.distanceTo(_ePos);
-  const speed = Math.hypot(player.vel.x, player.vel.z);
+  if (tgtIsEnemy) _shotTgt.set(t.obj.position.x, t.obj.position.y + 1.20, t.obj.position.z);
+  else playerChest(_shotTgt);
+  _ePos.copy(_shotTgt);
+  /* Suppressive fire at a remembered position. The height used to be a world
+     constant 1.2, which is right only on the yard floor — the upper deck is at
+     4.42, so a man suppressing a position up there put every round three metres
+     into the underside of it. lastKnown now carries the target's floor. */
+  const aim = atPoint ? _tmpAim.set(atPoint.x, (atPoint.y || 0) + 1.2, atPoint.z) : _shotTgt;
+  const dist = muzzle.distanceTo(_shotTgt);
+  /* whose movement widens the cone: the man being shot at, not always the player */
+  const speed = tgtIsEnemy ? (t.speed || 0) : Math.hypot(player.vel.x, player.vel.z);
   /* Human-ish accuracy: worse at range, worse against a moving target, and it
      tightens the longer they have been shooting at you — standing still is what
      gets you killed, not being seen.
@@ -6292,7 +6506,10 @@ function enemyShoot(e, atPoint){
      crack and the dust puff as a warning and has a couple of seconds to break
      contact, and the shots that do land later feel earned. */
   const warm = atPoint ? 2.2 : lerp(1.55, 0.80, clamp((e.engage||0)/5.5, 0, 1));
-  const err = 0.040 * warm * (1 + dist*0.028) * (1 + speed*0.075) * (player.crouch?1.15:1);
+  /* the crouch term is about the player's silhouette, so it has no business
+     modulating a fight between two soldiers on the far side of the yard */
+  const err = 0.040 * warm * (1 + dist*0.028) * (1 + speed*0.075)
+            * ((!tgtIsEnemy && player.crouch) ? 1.15 : 1);
   const dir = aim.clone().sub(muzzle).normalize();
   const rgt = new THREE.Vector3().crossVectors(dir, _up).normalize();
   const upv = new THREE.Vector3().crossVectors(rgt, dir).normalize();
@@ -6301,36 +6518,56 @@ function enemyShoot(e, atPoint){
 
   enemyMuzzleFlash(muzzle);
   const pan = clamp((e.obj.position.x-camera.position.x)/16,-1,1);
-  SFX.gunshot(Math.random()<0.5?'rifle':'pistol', pan, dist);
+  /* Loudness is how far the shot is from the LISTENER, which is only the same
+     thing as `dist` when the listener is the one being shot at. Two puppets
+     trading fire six metres apart at the far fence would otherwise play at close
+     range, undelayed and perfectly panned, as though it were happening beside
+     you. The player branch keeps `dist` verbatim so operator mode is untouched —
+     camera and chest differ by half a metre, which would shift the falloff. */
+  SFX.gunshot(Math.random()<0.5?'rifle':'pistol', pan,
+              tgtIsEnemy ? muzzle.distanceTo(camera.position) : dist);
 
-  /* trace against the world, then test the player capsule */
+  /* trace against the world, then test the bodies */
   losRay.set(muzzle, dir); losRay.far = HALF*3;
   const hits = losRay.intersectObjects(worldSolid, false);
-  const wallDist = hits.length ? hits[0].distance : 90;
+  const wallDist = hits.length ? hits[0].distance : HALF*3;
 
-  /* ray vs vertical cylinder around the player */
-  const px = player.pos.x - muzzle.x, pz = player.pos.z - muzzle.z;
+  /* ray vs vertical cylinder. The player's is tested ALWAYS, even for a puppet's
+     round: dropping it in favour of the target's would make standing directly
+     behind a puppet a permanent, free invulnerability. Whichever body the round
+     reaches first is the one it hits. */
   const dx = dir.x, dz = dir.z;
   const dd = dx*dx + dz*dz;
-  let tHit = Infinity;
-  if (dd > 1e-6){
-    const t = (px*dx + pz*dz)/dd;
-    if (t>0){
-      const cx = dx*t - px, cz = dz*t - pz;
-      const lateral = Math.hypot(cx,cz);
-      if (lateral < P_RADIUS*1.05){
-        const y = muzzle.y + dir.y*t;
-        if (y > player.pos.y+0.05 && y < player.pos.y+player.height) tHit = t;
-      }
-    }
-  }
-  const end = muzzle.clone().addScaledVector(dir, Math.min(wallDist, tHit===Infinity?90:tHit));
+  const hitCyl = (cxw, czw, y0, y1, rad) => {
+    if (dd <= 1e-6) return Infinity;
+    const px = cxw - muzzle.x, pz = czw - muzzle.z;
+    const tt = (px*dx + pz*dz)/dd;
+    if (tt <= 0) return Infinity;
+    const ox = dx*tt - px, oz = dz*tt - pz;
+    if (Math.hypot(ox,oz) >= rad) return Infinity;
+    const y = muzzle.y + dir.y*tt;
+    return (y > y0 && y < y1) ? tt : Infinity;
+  };
+  const tPlayer = hitCyl(player.pos.x, player.pos.z,
+                         player.pos.y+0.05, player.pos.y+player.height, P_RADIUS*1.05);
+  /* 0.30 sits between the hbBody face half-width (0.21) and its corner (0.3745);
+     the band is the soldier's full standing extent off the same geometry */
+  const tEnemy = tgtIsEnemy
+    ? hitCyl(t.obj.position.x, t.obj.position.z, t.obj.position.y, t.obj.position.y+1.83, 0.30)
+    : Infinity;
+  const tHit = Math.min(tPlayer, tEnemy);
+  const victimIsPlayer = tPlayer <= tEnemy;
+  const victim = victimIsPlayer ? null : t;
+
+  const end = muzzle.clone().addScaledVector(dir, Math.min(wallDist, tHit===Infinity?HALF*3:tHit));
   spawnTracer(muzzle, end, 0xff9a5a, 1.25);
 
-  /* Confirm the path from the player's end before it costs health — same
+  /* Confirm the path from the victim's end before it costs health — same
      back-face problem as hasLOS, and this is the one that actually hurts. */
   let clearPath = tHit < wallDist;
   if (clearPath){
+    if (victimIsPlayer) playerChest(_ePos);
+    else _ePos.set(victim.obj.position.x, victim.obj.position.y + 1.20, victim.obj.position.z);
     _revDir.subVectors(muzzle, _ePos);
     const revLen = _revDir.length();
     if (revLen > 0.6){
@@ -6342,7 +6579,11 @@ function enemyShoot(e, atPoint){
 
   if (clearPath){
     const dmg = rand(5.5, 9.0) * clamp(1 - Math.max(0,dist-25)/55, 0.5, 1);
-    damagePlayer(dmg, e.obj.position);
+    /* `head` is false for every AI-on-AI round, so G.headshots stays the
+       player's statistic; `e` rides along so damageEnemy knows who fired and can
+       expose a puppet who has just shot one of his own. */
+    if (victimIsPlayer) damagePlayer(dmg, e.obj.position);
+    else damageEnemy(victim, dmg, false, dir, end, e);
   } else if (hits.length){
     const n = hits[0].face ? hits[0].face.normal.clone().transformDirection(hits[0].object.matrixWorld)
                            : new THREE.Vector3(0,1,0);
@@ -6397,6 +6638,13 @@ function pickCover(e, tx, tz){
 const COMMS_COOLDOWN = {};
 function comms(e, text, priority){
   if (!G.running || G.over) return;
+  /* A man under Imperio has stopped talking to his squad. Beyond being right, it
+     is load-bearing: every callout here shares one global cooldown and the
+     CONTACT line is sent as priority, so a handful of puppets flipping into
+     combat would push a callout every 420ms forever and crowd the player's own
+     fight out of the feed. Worse, bearingWord is anchored on the player, so each
+     one would announce a bearing as though YOU had just been spotted. */
+  if (e && e.imperio > 0) return;
   const now = perfNow;
   if (!priority && COMMS_COOLDOWN.last && now - COMMS_COOLDOWN.last < 1700) return;
   if (COMMS_COOLDOWN.last && now - COMMS_COOLDOWN.last < 420) return;
@@ -6421,6 +6669,20 @@ const _tmpAim = new THREE.Vector3();
  */
 const MAX_SHOOTERS = 2;
 const SHOOTERS_DARK_LO = 7, SHOOTERS_DARK_HI = 10;
+/* Imperio's share of the same accounting. IMPERIO_SHOOTERS is how many men will
+   turn on one exposed puppet; TOTAL_SHOOTERS is the ceiling across the whole
+   yard, player's attackers included, and it exists because per-puppet caps with
+   no global limit is the same mistake this director was written to fix — just
+   spread over more fights. */
+const IMPERIO_SHOOTERS = 3;
+const TOTAL_SHOOTERS = 13;
+/* How long a man stays yours, how often he reconsiders who to shoot, and how far
+   the news travels when he is caught doing it. */
+const IMPERIO_TIME = 26;
+const IMPERIO_RETARGET = 1.6;
+/* how long he tries for a man he cannot see before looking for a better one */
+const IMPERIO_BLIND = 4.0;
+const EXPOSE_RADIUS = 26;
 function maxShooters(){
   if (!isDark()) return MAX_SHOOTERS;
   const t = clamp((G.total - ENEMY_MIN) / Math.max(1, ENEMY_MAX - ENEMY_MIN), 0, 1);
@@ -6440,16 +6702,18 @@ function bearingWord(e){
  * six simultaneous shooters and an unwinnable 30 dps.
  */
 const _active = [];
+const _bucket = [];
 function updateCombatDirector(){
   _active.length = 0;
   for (const e of enemies){
     e.mayFire = false;
-    if (e.dead || e.state!==ST.COMBAT || !e.canSee) continue;
+    if (e.dead || e.state!==ST.COMBAT || !e.seesTgt) continue;
     /* rigid, hoisted, screaming or disarmed men are still in the fight as far as
        the rest of the squad is concerned — they keep taking up a slot in nobody's
        accounting — but they are not the ones shooting, and letting them hold a
        cleared-to-fire slot would have the cap spent on men who cannot use it */
     if (e.frozen>0 || e.levit>0 || e.tortured>0 || e.disarmed) continue;
+    if (targetOf(e) === null) continue;          // charmed with nobody to fight
     _active.push(e);
   }
   /* Endgame sweep. An alert decays after a few seconds of no contact, which is
@@ -6458,12 +6722,28 @@ function updateCombatDirector(){
      against a clock. Once the squad is nearly gone the survivors keep getting
      re-tasked onto the player's rough position until somebody finds him. */
   if (G.running && perfNow > _sweepAt){
-    let alive = 0;
-    for (const e of enemies) if (!e.dead) alive++;
-    if (alive > 0 && alive <= 3){
+    /* Puppets do not count toward "nearly gone". They are not hunting you, so
+       three of them plus one hostile would otherwise never trip the sweep and
+       the last real soldier would go back to walking his route.
+
+       Nothing forces a charm to end here. The round terminates on its own: a
+       charm expires on its own clock in updateEnemy whether or not anybody is
+       shooting, puppets left alone in the yard fight each other, and their kills
+       count toward the objective like any other. An earlier version force-freed
+       every puppet the moment no un-charmed man was left, which both contradicts
+       the rule that they turn on each other and — because this block only
+       re-arms its own timer inside the branch below — fired on every single
+       frame, emptying and refilling the charm faster than anyone could aim. */
+    let free = 0;
+    for (const e of enemies) if (!e.dead && !(e.imperio > 0)) free++;
+    if (free > 0 && free <= 3){
       _sweepAt = perfNow + 6000;
       for (const e of enemies){
-        if (e.dead || e.canSee) continue;
+        /* seesPlayer, not seesTgt — this is about who has eyes on YOU. And never
+           a puppet: the sweep would hand him a lastKnown at your feet, and since
+           the player's body is still tested on every round he fires, your own
+           men would put bursts into you every six seconds. */
+        if (e.dead || e.seesPlayer || e.imperio > 0) continue;
         e.alerted = true; e.state = ST.COMBAT; e.saidLost = true; e.cover = null;
         e.hunt = Math.max(e.hunt, 9);
         const f = nearestFree(player.pos.x + rand(-4,4), player.pos.z + rand(-4,4),
@@ -6473,11 +6753,53 @@ function updateCombatDirector(){
     }
   }
 
-  if (G.grace > 0) return;      // spotted and closing, but holding fire
-  _active.sort((a,b)=> a.obj.position.distanceToSquared(camera.position)
-                     - b.obj.position.distanceToSquared(camera.position));
-  const cap = maxShooters();
-  for (let i=0;i<Math.min(cap,_active.length);i++) _active[i].mayFire = true;
+  /* ---- tier 1: the men shooting at the player ----
+     Grace gates this bucket only. It is about the opening seconds of YOUR round,
+     and a firefight between two soldiers on the far side of the yard has nothing
+     to do with it — Imperio is castable on the first frame, so an early return
+     here would freeze a puppet fight for the whole grace period. */
+  if (G.grace <= 0){
+    _bucket.length = 0;
+    for (const e of _active) if (targetOf(e) === TGT_PLAYER) _bucket.push(e);
+    _bucket.sort((a,b)=> a.obj.position.distanceToSquared(camera.position)
+                       - b.obj.position.distanceToSquared(camera.position));
+    const cap = maxShooters();
+    for (let i=0;i<Math.min(cap,_bucket.length);i++) _bucket[i].mayFire = true;
+  }
+  /* Everything below is Imperio, and operator mode has no Imperio. This return
+     is what makes the rework free there: filter preserves order and sort is
+     stable, so with every man targeting the player tier 1 above selects exactly
+     the same set the single-bucket version did. */
+  if (!isDark()) return;
+
+  /* ---- tier 2: the men shooting at a puppet ----
+     Each puppet gets a small cap of his own so he is not swarmed, and they draw
+     from one global budget so a yard full of exposed puppets cannot multiply the
+     number of guns going off at once. That global ceiling is not cosmetic: the
+     muzzle-flash ring is six sprites deep and the tracer pool twenty-six, and
+     past roughly a dozen simultaneous shooters the two men actually shooting at
+     YOU lose their flash and their tracer to a firefight sixty metres away —
+     which is the only warning the game gives you that you are being shot. */
+  let budget = TOTAL_SHOOTERS;
+  for (const e of _active) if (e.mayFire) budget--;
+  if (budget <= 0) return;
+  for (const pup of enemies){
+    if (budget <= 0) break;
+    if (pup.dead || !(pup.imperio > 0)) continue;
+    _bucket.length = 0;
+    for (const e of _active) if (targetOf(e) === pup) _bucket.push(e);
+    if (!_bucket.length) continue;
+    _bucket.sort((a,b)=> a.obj.position.distanceToSquared(pup.obj.position)
+                       - b.obj.position.distanceToSquared(pup.obj.position));
+    const n = Math.min(IMPERIO_SHOOTERS, _bucket.length, budget);
+    for (let i=0;i<n;i++){ _bucket[i].mayFire = true; budget--; }
+  }
+  /* ---- tier 3: the puppets themselves ---- */
+  for (const e of _active){
+    if (budget <= 0) break;
+    if (!(e.imperio > 0) || e.mayFire) continue;
+    e.mayFire = true; budget--;
+  }
 }
 
 function updateEnemy(e, dt){
@@ -6516,6 +6838,55 @@ function updateEnemy(e, dt){
      branch, so for anyone still standing it simply never ran. */
   if (e.gunDropped) stepDroppedGun(e, dt);
 
+  /* ---------- dark lord: Imperio ----------
+     Ahead of the four hold gates below, not after them. Every one of those gates
+     returns early, so a charm ticked underneath them would stop running the
+     moment the man was petrified or hoisted — Petrificus on your own puppet
+     would buy six free seconds of it and a held Crucio would extend it for as
+     long as you cared to hold the button. Exactly the bug the holds themselves
+     were rewritten to avoid.
+
+     And here rather than in updateSpells, for two reasons: updateSpells runs
+     outside the round-is-live check, so the charm would burn down on the pause
+     screen, and it is fed real time while this loop is fed the dilated clock, so
+     apparating would spend three seconds of curse for every one of combat. */
+  if (e.imperio > 0){
+    e.imperio -= dt;
+    if (e.imperio <= 0){ uncharm(e); }
+    else {
+      e.impRetgt -= dt;
+      const cur = e.impTgt;
+      /* Re-pick on a cadence and whenever the man he was fighting is gone. The
+         reference sweep in killEnemy should mean the second case almost never
+         fires; it is here because "almost never" is not never. */
+      /* Nearest is the right default and the wrong answer when the nearest man
+         is on the far side of a container. These soldiers steer with whiskers
+         rather than a path, so two of them either side of one crate will orbit
+         it indefinitely — measured at five metres apart for ninety seconds
+         without a shot. After a few seconds of no line of sight he looks for
+         somebody else, and only keeps the one he cannot reach if there is
+         nobody else to have. */
+      const blind = e.lostTgt > IMPERIO_BLIND;
+      if (e.impRetgt <= 0 || blind || !cur || cur.dead || cur.gibbed){
+        e.impRetgt = IMPERIO_RETARGET;
+        const next = pickPuppetTarget(e, blind ? cur : undefined);
+        if (next !== cur){
+          e.impTgt = next;
+          /* Everything that carries stale aim across a target change. `engage`
+             especially: it survives, and it is what tightens the cone with time
+             on target, so a fresh victim would otherwise eat the tightest burst
+             the game can produce as an opening shot. */
+          e.burst = 0; e.suppress = 0; e.engage = 0;
+          e.losTimer = 0; e.losTimer2 = 0; e.cover = null; e.tacticT = 0;
+          /* and the blind clock, or the man he just switched to inherits the
+             last one's staleness and is dropped again on the next tick */
+          e.lostTgt = 0; e.seesTgt = false;
+        }
+      }
+      if (e.imperio > 0){ e.state = ST.COMBAT; e.alerted = true; }
+    }
+  }
+
   /* ---------- dark lord: bleed ----------
      Applied in quarter-second ticks rather than per frame. Routing a per-frame
      fraction through damageEnemy would repaint the nameplate canvas sixty times
@@ -6541,30 +6912,72 @@ function updateEnemy(e, dt){
   if (e.frozen > 0){ stepPetrified(e, dt); updateTag(e); return; }
   if (e.tortured > 0){ stepTortured(e, dt); updateTag(e); return; }
 
-  /* ---------- perception ---------- */
+  /* ---------- perception ----------
+     Two questions now, not one: can he see the player, and can he see whoever he
+     is actually fighting. They are the same question for everybody in operator
+     mode and for every un-charmed man who has not been retasked, so the second
+     ray is only ever paid for by the handful of men in a puppet fight. */
+  const _tgt = targetOf(e);
+  const _tgtIsPlayer = _tgt === TGT_PLAYER;
   e.losTimer -= dt;
   if (e.losTimer<=0){
     e.losTimer = 0.13 + Math.random()*0.06;
-    const see = hasLOS(e);
-    if (see && !e.canSee && e.state===ST.PATROL){
+    const see = hasLOS(e, TGT_PLAYER);
+    if (see && !e.seesPlayer && e.state===ST.PATROL && _tgtIsPlayer){
       e.state = ST.ALERT;
       e.reactT = rand(0.30,0.80);          // human reaction delay
       e.alerted = true;
       e.tag.draw(e.hp,true);
     }
-    e.canSee = see;
+    e.seesPlayer = see;
     if (see) e.lastSeen = 0;
   }
+  if (_tgtIsPlayer){
+    e.seesTgt = e.seesPlayer;
+  } else {
+    e.losTimer2 -= dt;
+    if (e.losTimer2 <= 0){
+      e.losTimer2 = 0.42 + Math.random()*0.16;
+      e.seesTgt = _tgt ? hasLOS(e, _tgt) : false;
+    }
+  }
+  /* canSee keeps its old name and its old meaning at the two sites that fork on
+     "am I fighting or searching" — it is now about his target, whoever that is */
+  e.canSee = e.seesTgt;
   e.lastSeen += dt;
+  /* lastSeen is "since I saw the PLAYER" and is used further down to decide
+     whether a man has lost contact and should give up. For anyone fighting
+     somebody else that question is about a different pair of eyes, so it gets
+     its own clock — which for the player's own hunters is the same number, so
+     nothing changes for them. */
+  e.lostTgt = e.seesTgt ? 0 : e.lostTgt + dt;
+  const sinceSeen = _tgtIsPlayer ? e.lastSeen : e.lostTgt;
   if (e.hunt > 0) e.hunt -= dt;
-  if (e.alerted && e.lastSeen > 7 && e.hunt <= 0 && e.state!==ST.PATROL){
+  /* The de-alert decay is measured against the PLAYER, so it must only apply to
+     a man whose business is the player. Without this gate a puppet 80m away
+     fails the sight-range check on distance alone — no walls needed — his
+     lastSeen climbs, and seven seconds later he drops back onto his patrol route
+     with the charm still ticking, never fires again, and his plate goes white.
+     The feature would work for exactly as long as you were watching it. */
+  if (_tgtIsPlayer && e.alerted && e.lastSeen > 7 && e.hunt <= 0 && e.state!==ST.PATROL){
     e.state = ST.PATROL; e.alerted=false; e.tag.draw(e.hp,false);
   }
 
   /* ---------- flinch ---------- */
   if (e.flinch>0) e.flinch = Math.max(0, e.flinch - dt*3.2);
 
-  playerChest(_ePos);
+  /* Where he is heading and what he is pointing at. A charmed man with nobody
+     left to fight resolves to null — he stands down rather than defaulting to
+     the player, which is the whole reason targetOf has three answers rather than
+     two. Rather than returning early, which would skip the movement integration
+     and the pose at the bottom of this function and freeze him mid-stride, he is
+     aimed harmlessly along his own facing and held still. */
+  const idle = !targetChest(e, _ePos);
+  if (idle){
+    _ePos.set(obj.position.x - Math.sin(e.yaw)*8, obj.position.y + 1.2,
+              obj.position.z - Math.cos(e.yaw)*8);
+    e.burst = 0; e.suppress = 0;
+  }
   const toP = _ePos.clone().sub(obj.position);
   const distToP = toP.length();
   let desiredX=0, desiredZ=0, moveSpeed=0;
@@ -6581,10 +6994,18 @@ function updateEnemy(e, dt){
                      'EYES ON, '+bearingWord(e), 'HOSTILE '+bearingWord(e)]), true);
     }
   }
+  else if (e.state===ST.COMBAT && idle){
+    /* charmed, and the yard has run out of anyone to point him at */
+    e.aimPitch = lerp(e.aimPitch, 0, dt*4);
+  }
   else if (e.state===ST.COMBAT){
     e.targetYaw = Math.atan2(toP.x, toP.z) + PI;
     e.aimPitch  = lerp(e.aimPitch, clamp(Math.atan2(toP.y-1.5, Math.hypot(toP.x,toP.z)), -0.7, 0.7), dt*8);
-    e.lastKnown.set(_ePos.x, 0, _ePos.z);
+    /* Carries the target's floor now instead of forcing zero. Only X and Z were
+       ever read back, and the endgame sweep already wrote a real Y here, so the
+       field was quietly inconsistent — and suppressive fire at a remembered
+       position on the upper deck aimed three metres under it. */
+    e.lastKnown.set(_ePos.x, _tgtIsPlayer ? player.pos.y : (_tgt ? _tgt.obj.position.y : 0), _ePos.z);
 
     /* magazine discipline — a reload is the window the player gets to push */
     if (e.reloadT > 0){
@@ -6653,7 +7074,7 @@ function updateEnemy(e, dt){
         if (e.burst>0){
           e.burst--;
           e.rounds--;
-          enemyShoot(e);
+          enemyShoot(e, null, _tgt);
           e.fireT = rand(0.11,0.15);
           if (e.burst===0) e.fireT = rand(0.85,1.9);
           if (e.rounds<=0){
@@ -6661,7 +7082,7 @@ function updateEnemy(e, dt){
             if (Math.random()<0.6) comms(e, pick(['RELOADING — COVER ME','MAG OUT','CHANGING MAGS']));
           }
         } else if (e.mayFire){
-          if (muzzleClear(e)){
+          if (muzzleClear(e, _tgt)){
             e.burst = randI(2,4);
             e.fireT = 0.03;
           } else {
@@ -6686,18 +7107,22 @@ function updateEnemy(e, dt){
       e.fireT -= dt;
       if (e.suppress > 0 && e.reloadT<=0 && e.fireT<=0 && e.mayFire && d>3){
         e.suppress--; e.rounds--;
-        enemyShoot(e, lk);
+        enemyShoot(e, lk, _tgt);
         e.fireT = e.suppress>0 ? rand(0.12,0.18) : rand(1.4,2.6);
         if (e.rounds<=0){ e.reloadT = rand(2.0,2.9); e.suppress = 0; }
-      } else if (e.fireT<=0 && e.lastSeen<2.2 && Math.random()<0.02){
+      } else if (e.fireT<=0 && sinceSeen<2.2 && Math.random()<0.02){
         e.suppress = randI(2,4);
       }
       e.burst = 0;
-      if (e.lastSeen>2.4 && !e.saidLost){
+      if (sinceSeen>2.4 && !e.saidLost){
         e.saidLost = true;
         if (Math.random()<0.5) comms(e, pick(['LOST VISUAL','WHERE IS HE','HE BROKE CONTACT']));
       }
-      if (e.lastSeen>4.5 && e.hunt<=0) e.state = ST.PATROL;
+      /* A puppet must never fall out of the fight because he has not seen YOU
+         recently — that was the same fuse as the seven-second de-alert above,
+         in its second location, and it dropped six of fourteen men out of
+         combat inside twenty seconds while every other reading looked healthy. */
+      if (sinceSeen>4.5 && e.hunt<=0 && !(e.imperio > 0)) e.state = ST.PATROL;
     }
     if (e.canSee) e.saidLost = false;
   }
@@ -6774,7 +7199,7 @@ function updateEnemy(e, dt){
          off target. In contact he stays square to whoever he is shooting at and
          walks the detour sideways; out of contact, facing the way you are going
          is the natural thing and the whisker keeps it. */
-      if (!(e.state===ST.COMBAT && e.lastSeen < 1.2))
+      if (!(e.state===ST.COMBAT && sinceSeen < 1.2))
         e.targetYaw = Math.atan2(desiredX,desiredZ)+PI;
     }
   } else { e.avoidT=0; e.avoidSide=0; e.clearT=0; }
@@ -7389,7 +7814,8 @@ const ABILITIES = [
   { id:'expel',    key:'E', code:'KeyE', name:'EXPELLIARMUS', hex:0xffd166, cd:1.5 },
   { id:'levi',     key:'F', code:'KeyF', name:'LEVICORPUS', hex:0x6ad6c8, cd:3.0 },
   { id:'petrify',  key:'C', code:'KeyC', name:'PETRIFICUS TOTALUS', hex:0x8fb6ff, cd:2.0 },
-  { id:'revelio',  key:'R', code:'KeyR', name:'HOMENUM REVELIO', hex:0xb6ffc0, cd:8.0 }
+  { id:'revelio',  key:'R', code:'KeyR', name:'HOMENUM REVELIO', hex:0xb6ffc0, cd:8.0 },
+  { id:'imperio',  key:'X', code:'KeyX', name:'IMPERIO', hex:0x9b3bff, cd:3.2 }
 ];
 const abilityById = Object.create(null);
 for (const a of ABILITIES) abilityById[a.id] = a;
@@ -7482,12 +7908,12 @@ function clearHolds(e, keep){
 
 /** Squad-wide reaction to magic. Same propagation the gunfire alert uses, with
  *  its own line pool — the soldiers have no vocabulary for this and it shows. */
-function alertToMagic(radius, chance){
+function alertToMagic(radius, chance, atX, atZ){
   alertSquad(radius, 4, e => pick(['CONTACT — I DO NOT KNOW WHAT THAT IS',
                                    'SOMETHING IS IN THE YARD, '+bearingWord(e),
                                    'THAT IS NOT A WEAPON — '+bearingWord(e),
                                    'ALL CALLSIGNS, '+bearingWord(e)+', WEAPONS FREE']),
-             chance===undefined?0.7:chance);
+             chance===undefined?0.7:chance, atX, atZ);
 }
 
 /* ---------------------------------------------------------------------------
@@ -7728,6 +8154,129 @@ function castPetrificus(){
   return true;
 }
 
+/* ---------------------------------------------------------------------------
+   Imperio.
+
+   The third Unforgivable, and the only spell in the game that does not point at
+   the yard — it points at one man and gives him back to it pointing the other
+   way. He keeps his rifle, his cover sense, his flanking, his burst discipline
+   and his reload; the single thing that changes is the answer to "who am I
+   trying to kill", which is why the whole of the existing soldier brain becomes
+   his brain for free.
+
+   The curse is undetectable, as it should be: he walks with his squad and
+   nobody reacts until he actually draws blood. That moment is exposePuppet,
+   below, and it is the payoff — a firefight you are not in, in a yard where
+   everything was hunting you a second ago.
+   --------------------------------------------------------------------------- */
+function castImperio(){
+  const a = abilityById.imperio;
+  const t = coneTarget(HALF*1.6) || aimAt(HALF*1.6);
+  camera.getWorldDirection(_dlA);
+  const muzzle = camera.position.clone().addScaledVector(_dlA, 0.5);
+  if (!t.enemy) return false;
+  const e = t.enemy;
+  /* A man with no rifle is no use to you, and worse, the failure is silent:
+     `disarmed` is set by four different spells and cleared nowhere, and the
+     combat director drops disarmed men before they can ever be cleared to fire.
+     Charming one buys a puppet who jogs around executing tactics forever without
+     firing a shot, with nothing on screen to say why. Refusing costs the reduced
+     cooldown a miss costs, and reads as the spell declining rather than failing. */
+  if (e.gunDropped || e.disarmed) return false;
+  if (e.imperio > 0) return false;                    // already yours
+  _dlB.set(e.obj.position.x, e.obj.position.y + 1.2, e.obj.position.z);
+  fxCurseBeam(muzzle, _dlB, a.hex, 1.8, 18);
+  SFX.imperio(clamp((e.obj.position.x-camera.position.x)/14,-1,1));
+  spellLight(_dlB, a.hex, 7, 0.3);
+  e.imperio = IMPERIO_TIME;
+  e.impTgt = pickPuppetTarget(e);
+  e.impRetgt = IMPERIO_RETARGET;
+  e.exposed = false;
+  e.impHunter = null;
+  e.state = ST.COMBAT; e.alerted = true;
+  /* the same clearing every target change does — nothing stale carries over */
+  e.burst = 0; e.suppress = 0; e.engage = 0;
+  e.losTimer = 0; e.losTimer2 = 0; e.cover = null; e.tacticT = 0;
+  e.tag.setCharm(true);
+  /* violet coming off him, so the change of allegiance is visible before he has
+     done anything to show it */
+  for (let i=0;i<20;i++)
+    spawnParticle(PS_SPARK, e.obj.position.x+rand(-0.35,0.35), e.obj.position.y+rand(0.9,1.9),
+      e.obj.position.z+rand(-0.35,0.35), rand(-0.5,0.5), rand(0.2,1.4), rand(-0.5,0.5),
+      {color:hexToRGB(a.hex), size:0.045, life:rand(0.5,1.1), drag:2.4, grav:-1.2});
+  /* Deliberately quiet — no alertToMagic. Every other curse shouts; this one is
+     supposed to go unnoticed, and waking the yard would give the game away
+     before he has fired a shot. The debrief counts it when a puppet kills, not
+     when you cast, which is how the other two Unforgivables already count. */
+  return true;
+}
+
+/** Hand a man back his own mind. */
+function uncharm(e){
+  if (!(e.imperio > 0) && !e.impTgt && !e.exposed) return;
+  e.imperio = 0;
+  e.impTgt = null;
+  e.exposed = false;
+  e.burst = 0; e.suppress = 0; e.engage = 0;
+  e.losTimer = 0; e.losTimer2 = 0; e.cover = null; e.tacticT = 0;
+  e.tag.setCharm(false);
+  /* everyone who was hunting him stops — the curse lifting is the end of it, and
+     a squad that kept shooting a man who is theirs again reads as a bug */
+  for (const o of enemies) if (o.impHunter === e) o.impHunter = null;
+  if (!e.dead){
+    e.state = ST.COMBAT; e.alerted = true;
+    e.lastSeen = 3.0;                    // stale: he has to find you again
+    comms(e, pick(['MY HEAD — WHAT WAS THAT','I DO NOT REMEMBER, I DO NOT REMEMBER',
+                   'SOMETHING WAS IN MY HEAD']), true);
+    for (let i=0;i<10;i++)
+      spawnParticle(PS_SPARK, e.obj.position.x+rand(-0.3,0.3), e.obj.position.y+rand(1.0,1.8),
+        e.obj.position.z+rand(-0.3,0.3), rand(-0.7,0.7), rand(0.1,1.0), rand(-0.7,0.7),
+        {color:[0.6,0.22,1.0], size:0.04, life:rand(0.3,0.7), drag:2.8, grav:-2});
+  }
+}
+
+/**
+ * A puppet has just put a round into one of his own. That is the moment the
+ * curse stops being invisible.
+ *
+ * Called from damageEnemy, so it fires on the damage actually landing rather
+ * than on the shot being fired — a puppet who misses for five seconds stays
+ * anonymous for five seconds, which is exactly right.
+ */
+function exposePuppet(pup, victim){
+  const first = !pup.exposed;
+  pup.exposed = true;
+  /* The victim knows for certain — he was just shot by him. */
+  victim.alerted = true;
+  victim.state = ST.COMBAT;
+  victim.impHunter = pup;
+  victim.cover = null; victim.tacticT = 0; victim.engage = 0;
+  victim.burst = 0; victim.suppress = 0; victim.losTimer2 = 0;
+  if (!first) return;
+  /* and the men near enough to have seen it happen turn on him too. Bounded by
+     radius and by the shooter cap in the director, so "his mates come for him"
+     never becomes "the entire garrison forgets about you". */
+  let called = false;
+  for (const o of enemies){
+    if (o === pup || o === victim || o.dead || o.imperio > 0) continue;
+    if (o.obj.position.distanceTo(pup.obj.position) > EXPOSE_RADIUS) continue;
+    o.alerted = true;
+    o.state = ST.COMBAT;
+    o.impHunter = pup;
+    o.cover = null; o.tacticT = 0; o.engage = 0;
+    o.burst = 0; o.suppress = 0; o.losTimer2 = 0;
+    if (!called){
+      called = true;
+      comms(o, pick([pup.name+' IS SHOOTING AT US — PUT HIM DOWN',
+                     pup.name+' HAS TURNED — DROP HIM',
+                     'CHECK YOUR FIRE — NO, IT IS '+pup.name+', HE IS HOSTILE']), true);
+    }
+  }
+  if (!called)
+    comms(victim, pick([pup.name+' SHOT ME — HE SHOT ME',
+                        'IT IS '+pup.name+', HE HAS TURNED']), true);
+}
+
 /** Homenum Revelio. An expanding shell rather than an instant sweep: it passes
  *  over the yard at a readable speed, ticking once per soldier it reaches, and
  *  what it reveals stays lit for a few seconds afterwards. */
@@ -7817,22 +8366,46 @@ function updateReveal(dt){
     if (R > HALF*3) SP.pulseR = 0;
   }
 
-  /* write one instance per part per revealed soldier */
+  /* One instance set per man, whether he is lit by Revelio, charmed, or both.
+     Two populations, one pass, and that is deliberate on both counts.
+
+     One pass, because a second loop appending after this one would write a man
+     who is both revealed and charmed twice — and SIL_CAP is exactly three slots
+     per possible soldier, so the yard would overflow at 51 doubled men. The
+     overflow would be silent: r128's setMatrixAt is a plain indexed write into a
+     Float32Array, so running off the end is a no-op rather than a throw, and the
+     visible result is somebody drawn as a floating head with no legs.
+
+     And the decrement is guarded, because that is the trap in the obvious merge.
+     Widening the gate to "revealed OR charmed" lets a charmed man who was never
+     revealed reach this line with revealed at 0, drives it to about -26 over his
+     duration, and then fade = clamp(negative, 0, 1) = 0. The material is
+     additive, so a black instance contributes nothing at all — while the count,
+     the matrices, the visibility flag and needsUpdate are every one of them
+     correct, and the draw call is issued. Zero pixels, and it heals itself the
+     instant you cast Revelio, which is precisely how a playtest misses it. */
   let n = 0;
   for (const e of enemies){
-    if (e.revealed <= 0) continue;
-    e.revealed -= dt;
+    const rev = e.revealed > 0, imp = e.imperio > 0;
+    if (!rev && !imp) continue;
+    if (rev) e.revealed -= dt;
     if (e.dead){ e.revealed = 0; continue; }
     /* three.js refreshes world matrices inside render(), i.e. after this runs,
        so without this the silhouette trails the body by a frame. Bounded: only
        the revealed men pay for it. */
     e.obj.updateMatrixWorld(true);
+    if (imp){
+      /* Charm outranks reveal — the tell for whose side a man is on must not be
+         painted over by the very spell you would use to find him. */
+      _silC.setRGB(0.62, 0.22, 1.0).multiplyScalar(clamp(e.imperio/1.2, 0, 1));
+    } else {
     const fade = clamp(e.revealed/1.2, 0, 1);
     /* a man who has eyes on you burns brighter than one who has not noticed */
-    const hot = (e.state===ST.COMBAT && e.canSee) ? 1 : 0;
+    const hot = (e.state===ST.COMBAT && e.seesPlayer) ? 1 : 0;
     /* pushed hard toward green: additive over a dark yard, then through a grade
        that desaturates by 40%, washes anything subtler out to plain white */
     _silC.setRGB(hot?1.0:0.16, 1.0, hot?0.34:0.46).multiplyScalar(fade);
+    }
     const hb = e.hb;
     for (let i=0;i<3 && n<SIL_CAP;i++){
       _silM.multiplyMatrices(hb[i].matrixWorld, SIL_PARTS[i]);
@@ -7988,7 +8561,12 @@ function stepTortured(e, dt){
    That guarantee is why blink was built first — smoke-flight is the same landing
    code with a longer, steerable approach.
    --------------------------------------------------------------------------- */
-const APPARATE_RANGE = 26;
+/* A blink used to stop at 26m. It does not stop at all now: you arrive wherever
+   you are looking, and the only limit is the yard. What replaced the constant is
+   not "no limit" but an explicit one — see startApparate — because the raycaster
+   doing the aiming is shared with every other spell and inherits whatever range
+   the last one left on it. */
+const APPARATE_REACH = DIAG*1.05;
 /* Half the old 30 m/s. At thirty you crossed the yard in under three seconds and
    spent all of them correcting an overshoot; the point of travelling as smoke is
    to pick where you come out, which needs time to aim. */
@@ -8091,27 +8669,66 @@ function apparateTo(dest){
   /* and the rope between the two, which is the part that reads as apparition
      rather than as two unrelated puffs */
   _appTo.set(dest.x, dest.y + 0.95, dest.z);
-  fxSmokeTrail(_appFrom, _appTo, 60, 0.32);
+  /* The particle count along a rope is clamped at 1500 inside fxSmokeTrail, and
+     that ceiling binds from 25m up — so past that distance the same budget has
+     to cover more ground and the rope thins out. The lever is the girth, not the
+     count: raising the count is what would wrap the 4200 ring and erase the
+     departure plume mid-draw. Narrowing the tube gathers the same particles into
+     a tighter cord, which at the distance a long blink is viewed from reads as a
+     dense line rather than as a scattering of dots. */
+  const _appLen = _appFrom.distanceTo(_appTo);
+  fxSmokeTrail(_appFrom, _appTo, 60, clamp(0.32*Math.pow(26/Math.max(1,_appLen), 0.35), 0.15, 0.34));
   player.vel.set(0,0,0);
   player.onGround = false;
   player.jumpsLeft = AIR_JUMPS;
   fxSmoke(dest.x, dest.y, dest.z, 30, 0.55, 1.9);
   SFX.apparate(false);
   SP.appear = 1; SP.appearDur = 0.30;
-  alertToMagic(DIAG*0.30, 0.25);
+  /* Heard where you left, not where you arrived. alertSquad reads player.pos by
+     default, and player.pos was overwritten above — so with the cap gone, a
+     cross-yard blink used to wake a 36m bubble around the destination and leave
+     the men you were escaping none the wiser. Fleeing was strictly worse than
+     walking. The radius grows with the distance travelled, because a longer
+     crack carries further, and the anchor is _appFrom, captured before the move. */
+  alertToMagic(Math.max(DIAG*0.30, _appFrom.distanceTo(_appTo)*0.5 + 8), 0.25,
+               _appFrom.x, _appFrom.z);
 }
 function startApparate(){
   camera.getWorldDirection(_dlA);
-  /* aim at what you are looking at, capped at the range; if the ray hits
-     something, stop a little short of it so you land in front of the wall
-     rather than in it */
   _dlRay.set(camera.position, _dlA);
-  _dlRay.far = APPARATE_RANGE;
+  /* Assigned, never deleted. _dlRay is one shared raycaster: clearTo leaves
+     len-0.45 on it, aimAt leaves maxDist, Sectumsempra leaves its own range.
+     Simply dropping this line — which is what "remove the limit" looks like —
+     would make a blink inherit whichever of those ran last. Petrify a man four
+     metres away and every following blink would take the no-hit branch until you
+     cast something else. DIAG*1.05 clears the yard's longest possible ray with
+     room to spare; Infinity would work too but leaves the shared instance in a
+     state the next caller has to remember to fix. */
+  _dlRay.far = APPARATE_REACH;
   const hits = _dlRay.intersectObjects(worldSolid, false);
-  const reach = hits.length ? Math.max(1.5, hits[0].distance - 0.9) : APPARATE_RANGE;
+  /* The no-hit branch used to mean "nothing within 26m" and now means "the ray
+     left the yard entirely", which is a different question and needs a different
+     answer. It is reachable: the invisible perimeter wall is 12m tall, so any
+     steep enough upward look clears it.
+
+     The height matters more than the distance. safeLanding resolves the surface
+     under the destination with groundAt, whose probe is 90m long — feed it an
+     aim height above ~88 and it finds nothing, reports no ground, and the search
+     falls back to y=0, which for someone standing on a container stack means
+     being quietly dumped into the lane beside it. Extrapolating a height along
+     an unbounded ray produces exactly that. So on a miss the aim keeps the
+     height you already had, which is bounded by the yard and cannot trip it. */
+  let reach, aimY;
+  if (hits.length){
+    reach = Math.max(1.5, hits[0].distance - 0.9);
+    aimY  = camera.position.y + _dlA.y*reach;
+  } else {
+    reach = DIAG;
+    aimY  = camera.position.y;
+  }
   const tx = camera.position.x + _dlA.x*reach;
   const tz = camera.position.z + _dlA.z*reach;
-  apparateTo(safeLanding(tx, tz, camera.position.y + _dlA.y*reach));
+  apparateTo(safeLanding(tx, tz, aimY));
 }
 function startSmokeFlight(){
   cancelMantle();
@@ -8333,6 +8950,7 @@ function triggerAbility(id){
   else if (id === 'levi')    ok = castLevicorpus();
   else if (id === 'petrify') ok = castPetrificus();
   else if (id === 'revelio') castRevelio();
+  else if (id === 'imperio') ok = castImperio();
   else if (id === 'apparate') startApparate();
   /* a curse that found nobody costs a fraction of the cooldown rather than the
      whole thing: missing should not be punished the way spending should */
@@ -9249,6 +9867,15 @@ function applyMode(m){
   SP.smokeFlight = 0; SP.appear = 0; SP.reforming = 0; SP.veil = 0;
   SP.pulseR = 0; SP.crucioOn = null; SP.flying = false;
   silMesh.count = 0; silMesh.visible = false;
+  /* The mode buttons on the start screen call this with the previous round's
+     squad still standing in the yard, and no reset follows. A charmed man left
+     in that array would keep his violet plate and be re-lit by updateReveal on
+     the very next frame, over the menu. */
+  for (const e of enemies){
+    if (!e.imperio && !e.impTgt && !e.impHunter && !e.exposed) continue;
+    e.imperio = 0; e.impTgt = null; e.impHunter = null; e.exposed = false;
+    e.tag.setCharm(false);
+  }
   for (const s of SPELL_LIGHTS){ s.t = 0; s.l.intensity = 0; }
   compMat.uniforms.veil.value = 0;
 
@@ -9333,6 +9960,7 @@ function resetWorldState(){
   for (const sys of [PS_SPARK,PS_SOFT,PS_SMOKE]){
     for (let i=0;i<sys.count;i++){ sys.data[i].life=0; sys.alp[i]=0; }
     sys.geo.attributes.palpha.needsUpdate = true;
+    sys.evictions = 0;
   }
   SP.trailPrev.set(0,0,0);
   UI.feed.innerHTML='';
@@ -9402,7 +10030,14 @@ function endGame(win){
   silMesh.count = 0; silMesh.visible = false;
   /* the reveal timers have to go too, or updateReveal rebuilds the silhouettes
      on the very next frame and they hang over the debrief */
-  for (const e of enemies){ e.revealed = 0; e.pulsed = false; }
+  for (const e of enemies){
+    e.revealed = 0; e.pulsed = false;
+    /* and the charm, for exactly the same reason the line above exists —
+       updateSpells runs outside the round-is-live check, so a charmed man would
+       be re-lit violet over the debrief on the very next frame */
+    e.imperio = 0; e.impTgt = null; e.impHunter = null; e.exposed = false;
+    e.tag.setCharm(false);
+  }
   SP.pulseR = 0;
   SP.protego = false; SP.protegoK = 0; SP.veil = 0;
   SP.qDown = false; SP.qHeld = 0; SP.qFired = false;
