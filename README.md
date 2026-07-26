@@ -5,9 +5,9 @@ no package manager, and not a single image, audio or model file on disk.
 
 > Forked from **[StarKnightt/operation-ironhold](https://github.com/StarKnightt/operation-ironhold)**
 > — MIT, © StarKnightt. The original game and the five prompts that produced it are entirely
-> upstream's work. This fork adds a configurable garrison size, removes the round timer,
-> generates patrol routes instead of hand-placing them, adds a third air jump and carries more
-> reserve ammunition.
+> upstream's work. This fork doubles the size of the map, adds a configurable garrison size,
+> removes the round timer, generates patrol routes instead of hand-placing them, adds a third
+> air jump and carries more reserve ammunition.
 
 **[Play the original here](https://starknightt.github.io/operation-ironhold/)**
 
@@ -18,7 +18,7 @@ anywhere from ten to a hundred — and there is no clock.
 
 The entire game — renderer setup, world generation, weapon handling, enemy AI, audio
 synthesis, post-processing and HUD — is about 6,500 lines of JavaScript and CSS inlined
-into a single 304 KB `index.html`. The only external resource is three.js r128, pulled
+into a single 318 KB `index.html`. The only external resource is three.js r128, pulled
 from a CDN. Everything else is generated at runtime.
 
 It was built by an AI agent from five prompts, recorded verbatim in
@@ -123,6 +123,29 @@ while airborne near a ledge up to about 1.95m above your feet pulls you up over 
 what gets you onto a container roof from flat ground and onto the sniper deck without the
 ramp.
 
+## The map
+
+An 85m square — 7,225 square metres, twice the area of the 60x60 yard the game shipped with.
+The original yard is untouched inside a 30m half-extent: the long container corridor, the
+two-storey building with the ramp to the sniper deck, the open centre with the burnt-out
+flatbed and the guard shack all sit exactly where they were. Everything from there out to the
+fence is the outer apron, and it is authored rather than tiled — a second, longer container
+corridor down the east side with two breaches cut into it, a container maze on the west so the
+two flanks do not play the same way, a rank along the north fence, a loading dock with four
+roller shutters and a ramp on the south, and watchtowers on the north corners whose decks sit
+3.4m up, out of reach of a mantle from flat ground but reachable by a chained triple jump.
+
+Prop density is held, not stretched. Against twice the area there are 2.02x the colliders,
+2.24x the placed instances and 2.22x the cover anchors. The scatter passes that fill in litter,
+tyre tracks and loose pipe now take their bounds and their counts from the map extent, because
+left absolute they kept dropping the same debris inside the old boundary and left a bald ring
+of swept concrete around it.
+
+Every run of the outer container ranks is deliberately broken. A solid rank would seal the
+outer lane off from the core, and a soldier whose patrol snapped into a sealed lane is one you
+have to go hunting for at the end of a round. All four apron sides are verified reachable from
+the player's spawn by the same flood fill the AI uses.
+
 ## Enemies
 
 Soldiers patrol waypoints, routing around cover with a grid pathfinder over the same
@@ -173,12 +196,27 @@ Shadow casting is trimmed by bounding-box size, which cut roughly two thirds of 
 pass for objects that only ever contributed a sub-pixel smudge.
 
 Soldiers dominate the frame at high counts, because each one is 26 merged buffers and 8
-shadow casters that are not shared between them. Measured draw calls per frame run about 300
-at ten hostiles, 620 at twenty-five and 2,300 at a hundred, and the worst-case AI update — the
-whole garrison in combat at once — runs about 0.5ms, 1.1ms and 4-10ms respectively. The top of
-the slider is deliberately past what a mid-range machine will hold at 60fps; the dynamic
-resolution scaler will not rescue it either, since the cost is draw-call submission rather
-than fill.
+shadow casters that are not shared between them. Doubling the map barely moved that: measured
+draw calls per frame run about 280 at ten hostiles, 630 at twenty-five and 2,190 at a hundred,
+against 594 at twenty-five on the old yard. Twice the props cost almost nothing in draw calls
+because the new ones ride the existing instanced buckets. What the bigger map does cost is AI
+time, since twice the colliders makes every `blocked` probe dearer — the worst case, the whole
+garrison in combat at once, runs about 1.0ms, 2.2ms and 9.2ms against 0.5ms, 1.2ms and 4.6ms
+before. The top of the slider is deliberately past what a mid-range machine will hold at 60fps;
+the dynamic resolution scaler will not rescue it either, since the cost is draw-call submission
+and CPU rather than fill.
+
+Doubling the yard also doubles the per-cell work in two load-time passes. The navigation flood
+fill goes from 14,641 cells to 29,241, which is 14ms. The patrol-anchor scan over the upper deck
+needs a downward raycast per cell and would have been a 100ms-plus stall, so it samples at 2m
+where the ground pass samples at 1m — it only has to supply a handful of anchors, and a quarter
+of the rays is enough for that.
+
+The sun's shadow ortho grew with the yard, from 104m to 148m across. Left at 2048 that would
+have dropped shadow resolution from 20 texels per metre to 14, so the map went to 4096 and the
+yard now gets 28 — sharper than the original rather than merely equal to it. The alternative,
+keeping 2048 and tracking a tight ortho to the player, holds texel density for free but drops
+shadows off distant geometry, which on a yard with 120m sightlines is the more visible loss.
 
 ## Implementation notes
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>OPERATION IRONHOLD — Warehouse District</title>
-<meta name="description" content="Ten to a hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 304 KB HTML file with no build step and no asset files.">
+<meta name="description" content="Ten to a hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 318 KB HTML file with no build step and no asset files.">
 <meta name="author" content="Prasenjit">
 <meta name="theme-color" content="#0a0c0e">
 <link rel="canonical" href="https://starknightt.github.io/operation-ironhold/">
@@ -13,7 +13,7 @@
 <meta property="og:site_name" content="Operation Ironhold">
 <meta property="og:url" content="https://starknightt.github.io/operation-ironhold/">
 <meta property="og:title" content="Operation Ironhold — a first-person shooter in one HTML file">
-<meta property="og:description" content="Ten to a hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 304 KB HTML file with no build step and no asset files.">
+<meta property="og:description" content="Ten to a hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 318 KB HTML file with no build step and no asset files.">
 <meta property="og:image" content="https://starknightt.github.io/operation-ironhold/og.jpg">
 <meta property="og:image:secure_url" content="https://starknightt.github.io/operation-ironhold/og.jpg">
 <meta property="og:image:type" content="image/jpeg">
@@ -25,7 +25,7 @@
 <meta name="twitter:site" content="@Star_Knight12">
 <meta name="twitter:creator" content="@Star_Knight12">
 <meta name="twitter:title" content="Operation Ironhold — a first-person shooter in one HTML file">
-<meta name="twitter:description" content="Ten to a hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 304 KB HTML file with no build step and no asset files.">
+<meta name="twitter:description" content="Ten to a hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 318 KB HTML file with no build step and no asset files.">
 <meta name="twitter:image" content="https://starknightt.github.io/operation-ironhold/og.jpg">
 <meta name="twitter:image:alt" content="First-person view down a container yard, an M4 carbine firing at a hostile, with minimap, timer and ammo counter on the HUD.">
 <style>
@@ -400,7 +400,7 @@
                aria-label="Number of hostiles">
         <span class="val" id="countVal">25</span>
       </div>
-      <div class="scale"><span>10</span><span>100</span></div>
+      <div class="scale"><span id="scaleMin">10</span><span id="scaleMax">100</span></div>
     </div>
     <div class="cta">PRESS TO START</div>
     <div class="hint">ELIMINATE ALL <span id="hintHostiles">25</span> HOSTILES — NO TIME LIMIT</div>
@@ -454,6 +454,15 @@ let perfNow = performance.now();
 const rand  = (a,b)=> a + Math.random()*(b-a);
 const randI = (a,b)=> Math.floor(rand(a,b+1));
 const pick  = a => a[(Math.random()*a.length)|0];
+/* Half-extent of the yard, and its corner-to-corner diagonal. Declared up here
+   rather than with the world in section 5 because things earlier in the file are
+   tuned against the size of the map — audio distance falloff is the main one —
+   and a literal metre count in those places silently stops matching the yard the
+   moment it is resized. 42.5 makes an 85m square: 7,225 square metres, twice the
+   area of the original 60x60. The span stays a multiple of five so the fence
+   panels, posts and razor wire, which all step by 5, still tile it exactly. */
+const HALF = 42.5;
+const DIAG = HALF*2*Math.SQRT2;
 /** framerate independent exponential smoothing */
 const damp  = (cur,tgt,lambda,dt)=> lerp(cur,tgt,1-Math.exp(-lambda*dt));
 const easeOutCubic  = t => 1-Math.pow(1-t,3);
@@ -495,6 +504,12 @@ function mergeGeoms(list){
 /* =========================================================================
    1. AUDIO — 100% procedural Web Audio
    ========================================================================= */
+/* How far sound carries, as one envelope every distance attenuation is derived
+   from. These were four separate metre literals — 55, 60, 60, 50 — each tuned by
+   ear on a 60m yard, which meant a larger map silenced gunfire that was still
+   well inside the range you could be killed from, and meant the four could drift
+   apart independently. The ratios between them are preserved exactly. */
+const AUDIO_REACH = DIAG * 0.65;
 const SFX = (function(){
   let ctx=null, master=null, noiseBuf=null, ready=false, ambNodes=[];
   let verbSend=null;
@@ -635,7 +650,7 @@ const SFX = (function(){
   function gunshot(kind, pan, dist){
     if(!ready) return;
     dist = dist||0;
-    const far = clamp(1 - dist/55, 0.12, 1);
+    const far = clamp(1 - dist/AUDIO_REACH, 0.12, 1);
     const vol = far*far;
     const delay = dist/340;
     if (kind==='rifle'){
@@ -717,13 +732,13 @@ const SFX = (function(){
   function landSound(f){ noise({type:'lowpass',freq:300,gain:.10+.28*f,dur:.16,atk:.002});
                          tone({type:'sine',f0:110,f1:44,dur:.13,gain:.14*f}); }
   function impactWall(pan,dist){
-    const v = clamp(1-dist/60,.15,1);
+    const v = clamp(1-dist/(AUDIO_REACH*0.77),.15,1);
     noise({type:'bandpass',freq:rand(2200,3800),q:2.5,gain:.26*v,dur:.07,atk:.001,pan});
     noise({type:'lowpass',freq:700,gain:.14*v,dur:.09,pan});
     if (Math.random()<0.28) tone({type:'sine',f0:rand(2400,3400),f1:rand(700,1100),dur:.30,gain:.05*v,pan});
   }
   function impactFlesh(pan,dist){
-    const v = clamp(1-dist/60,.2,1);
+    const v = clamp(1-dist/(AUDIO_REACH*0.77),.2,1);
     noise({type:'lowpass',freq:rand(250,420),gain:.42*v,dur:.13,atk:.001,pan});
     tone({type:'sine',f0:160,f1:60,dur:.10,gain:.16*v,pan});
   }
@@ -734,7 +749,7 @@ const SFX = (function(){
   function killChime(){ tone({type:'sine',f0:900,dur:.07,gain:.11});
                         tone({type:'sine',f0:1350,dur:.11,gain:.11,delay:.06}); }
   function enemyDeath(pan,dist){
-    const v=clamp(1-dist/50,.15,1);
+    const v=clamp(1-dist/(AUDIO_REACH*0.64),.15,1);
     tone({type:'sawtooth',f0:rand(240,330),f1:rand(60,95),dur:.55,gain:.13*v,lp:1100,pan});
     noise({type:'lowpass',freq:500,gain:.22*v,dur:.35,atk:.03,pan,delay:.18});
   }
@@ -777,14 +792,23 @@ const MAXANISO = renderer.capabilities.getMaxAnisotropy();
    which is what keeps the far district from bleaching into the backdrop */
 const FOG_COLOR = 0xa39b8d;
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0074);
+/* Exponential fog is absolute, not relative to the map, so the old density that
+   put 33% haze on a 85m diagonal would put 55% on a 120m one and wash out every
+   long engagement. Not scaled all the way down by the same 1.414 either: the
+   distant skyline ranks at 258-292m are deliberately buried in haze, and
+   thinning the fog proportionally would pull them forward out of it. 0.0060 puts
+   30% haze at the new 99m sight limit — where the old was 23% at its 70m limit —
+   while leaving the skyline over 90% hazed. */
+scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0060);
 
 const BASE_FOV = 75;
 /* Near at 0.06 against a 400 far gives a 6700:1 depth range and the far side of
    the yard starts to shimmer where two surfaces nearly meet. Nothing solid ever
    gets within the player's 0.36 collision radius and the gun renders in its own
    scene, so 0.14 costs nothing visible and halves the depth range. */
-const camera = new THREE.PerspectiveCamera(BASE_FOV, innerWidth/innerHeight, 0.14, 400);
+/* far plane clears the furthest skyline rank at 292m plus the 60m the player can
+   now stand away from the origin */
+const camera = new THREE.PerspectiveCamera(BASE_FOV, innerWidth/innerHeight, 0.14, 480);
 camera.rotation.order = 'YXZ';
 
 /* separate scene for the viewmodel so the gun never clips into walls */
@@ -1291,11 +1315,19 @@ scene.add(new THREE.HemisphereLight(0xa6bacd, 0x6f6450, 0.74));
 const sun = new THREE.DirectionalLight(0xffdcae, 2.35);
 sun.position.copy(SUN_DIR).multiplyScalar(92);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048,2048);
+/* The ortho has to grow with the yard or the far corners fall outside it and
+   simply stop receiving shadows. Growing it alone would spread the same 2048
+   over 148m instead of 104m and drop from 20 shadow texels per metre to 14, so
+   the map size goes up with it — 4096 over 148m is 28 per metre, sharper than
+   the original rather than merely equal to it. The alternative, keeping 2048 and
+   tracking the ortho to the player, holds texel density for free but drops
+   shadows off distant geometry, which on a yard with 120m sightlines is the more
+   visible loss of the two. */
+sun.shadow.mapSize.set(4096,4096);
 sun.shadow.camera.near = 24;
-sun.shadow.camera.far  = 230;
-sun.shadow.camera.left = -52; sun.shadow.camera.right = 52;
-sun.shadow.camera.top  =  52; sun.shadow.camera.bottom= -52;
+sun.shadow.camera.far  = 280;
+sun.shadow.camera.left = -74; sun.shadow.camera.right = 74;
+sun.shadow.camera.top  =  74; sun.shadow.camera.bottom= -74;
 sun.shadow.bias = -0.0008;
 sun.shadow.normalBias = 0.026;
 scene.add(sun); scene.add(sun.target);
@@ -1565,9 +1597,16 @@ scene.add(skyDome);
 }
 
 /* =========================================================================
-   5. WORLD / MAP  —  abandoned warehouse district, 60x60
+   5. WORLD / MAP  —  abandoned warehouse district, 85x85
    ========================================================================= */
-const HALF = 30;
+/* HALF and DIAG are declared with the helpers near the top, since the audio and
+   renderer sections above are tuned against them. The original yard is untouched
+   inside ±CORE; everything from there out to the fence is the outer apron. */
+const CORE = 30;
+/* Where the player starts. Declared here rather than with the player, because the
+   world needs it: several scatter passes keep a clear radius around it, and a
+   crate dropped on the spawn is the first thing you would see. */
+const SPAWN = { x:0, z:24 };
 const colliders  = [];   // AABBs for movement
 const worldSolid = [];   // raycast targets for bullets / LOS
 const groundMesh = [];   // downward raycast (walkable surfaces)
@@ -1609,6 +1648,13 @@ const MAT = {
                                               color:0x71777d })
 };
 linearizeMats(MAT);
+
+/* The concrete tile was authored at 18 repeats across the old 76m slab — about
+   4.2m per tile. The repeat has to follow the slab or a larger yard simply
+   stretches each tile over more ground, which is exactly the detail loss that
+   makes a big map look cheaper than a small one. */
+const FLOOR_SPAN = HALF*2 + 16;
+TEX.concrete.repeat.setScalar(FLOOR_SPAN / 4.222);
 
 function addCollider(x,y,z,w,h,d){
   colliders.push({ minX:x-w/2, maxX:x+w/2, minY:y, maxY:y+h, minZ:z-d/2, maxZ:z+d/2 });
@@ -1673,7 +1719,7 @@ function box(w,h,d,x,y,z,mat,opt){
 
 /* ---- floor ---- */
 {
-  const g = new THREE.PlaneGeometry(HALF*2+16, HALF*2+16);
+  const g = new THREE.PlaneGeometry(FLOOR_SPAN, FLOOR_SPAN);
   g.rotateX(-PI/2);
   const floor = new THREE.Mesh(g, MAT.floor);
   floor.receiveShadow = true;
@@ -1691,7 +1737,11 @@ function box(w,h,d,x,y,z,mat,opt){
    working dock from a grey plane. Costs one transparent draw call.
    ------------------------------------------------------------------------- */
 {
-  const SPAN = HALF*2+16, S = 2048, PPM = S/SPAN;
+  /* 3072 rather than 2048: the overlay is one unrepeated layer over the whole
+     slab, so at the old resolution a slab half again as wide would drop from 27
+     to 20 pixels per metre. 3072 over the 101m span puts it back above where it
+     started, at 30, for a quarter of the memory a 4096 bake would cost. */
+  const SPAN = FLOOR_SPAN, S = 3072, PPM = S/SPAN;
   const c = document.createElement('canvas'); c.width=c.height=S;
   const x = c.getContext('2d');
   const WX = wx => (wx + SPAN/2) * PPM;
@@ -1782,11 +1832,14 @@ function box(w,h,d,x,y,z,mat,opt){
   }
   x.globalCompositeOperation='source-over';
 
-  /* --- tyre tracks: pairs of dark bands sweeping through the yard --- */
-  for (let t=0;t<7;t++){
-    const ax=rand(-30,30), az=rand(-30,30);
-    const bx=ax+rand(-34,34), bz=az+rand(-34,34);
-    const cx1=(ax+bx)/2+rand(-16,16), cz1=(az+bz)/2+rand(-16,16);
+  /* --- tyre tracks: pairs of dark bands sweeping through the yard ---
+     Endpoints and count both follow the extent: at a fixed ±30 the tracks stopped
+     dead at the old yard edge and the apron read as concrete nobody had ever
+     driven on, which is the tell that ground was added rather than always there. */
+  for (let t=0,nT=Math.round(7*(HALF/30)**2);t<nT;t++){
+    const ax=rand(-HALF,HALF), az=rand(-HALF,HALF);
+    const bx=ax+rand(-HALF*1.13,HALF*1.13), bz=az+rand(-HALF*1.13,HALF*1.13);
+    const cx1=(ax+bx)/2+rand(-HALF*0.53,HALF*0.53), cz1=(az+bz)/2+rand(-HALF*0.53,HALF*0.53);
     for (const off of [-0.9, 0.9]){
       const nx = -(bz-az), nz = (bx-ax);
       const l = Math.hypot(nx,nz)||1;
@@ -2160,18 +2213,55 @@ const CONTAINER_COLORS = [0xa85748, 0x53718c, 0x707f56, 0xab8a3f, 0x8b9096, 0x7e
     const uv = geo.attributes.uv;                   // stretch corrugation along length
     for (let i=0;i<uv.count;i++) uv.setXY(i, uv.getX(i)*2.4, uv.getY(i)*1.0);
   }
+  /* [x, y, z, rotY]. Rotation used to be derived from the array index, which was
+     fine while the list was fixed and made it impossible to append a row to
+     without scrambling everything after it. R = long axis along X. */
+  const R = PI/2;
   const list = [
     /* east corridor — two rows running north/south */
-    [12.6,0,-19],[12.6,0,-9.4],[12.6,0,0.2],[12.6,0,9.8],[12.6,0,19.4],
-    [19.4,0,-19],[19.4,0,-9.4],[19.4,0,0.2],[19.4,0,9.8],[19.4,0,19.4],
+    [12.6,0,-19,0],[12.6,0,-9.4,0],[12.6,0,0.2,0],[12.6,0,9.8,0],[12.6,0,19.4,0],
+    [19.4,0,-19,0],[19.4,0,-9.4,0],[19.4,0,0.2,0],[19.4,0,9.8,0],[19.4,0,19.4,0],
     /* stacked second layer to break sightlines down the corridor */
-    [19.4,CH,-9.4],[19.4,CH,9.8],[12.6,CH,0.2],
+    [19.4,CH,-9.4,0],[19.4,CH,9.8,0],[12.6,CH,0.2,0],
     /* scattered cover elsewhere */
-    [-4.5,0,-21.5],[2.0,0,-25.0],[-11.0,0,-4.0],[26.0,0,-3.0],[26.0,0,6.5],
-    [4.5,0,17.0],[-8.5,0,22.0],[24.5,0,22.5]
+    [-4.5,0,-21.5,0],[2.0,0,-25.0,R],[-11.0,0,-4.0,0],[26.0,0,-3.0,R],[26.0,0,6.5,0],
+    [4.5,0,17.0,R],[-8.5,0,22.0,0],[24.5,0,22.5,R],
+
+    /* ---- outer apron ----
+       The original yard ends at ±30; everything past it is new ground, and an
+       empty band around a dense core reads worse than a smaller map would. Each
+       run below is deliberately broken: a solid rank along the apron would seal
+       the outer lane off from the core, and a soldier snapped into a sealed lane
+       is one you have to go hunting for. */
+
+    /* east: a second corridor, longer than the original, with two breaches */
+    [33.5,0,-36,0],[33.5,0,-26,0],[33.5,0,-16,0],            /* gap at z=-6 */
+    [33.5,0,4,0],[33.5,0,14,0],                              /* gap at z=24 */
+    [33.5,0,34,0],
+    [39.5,0,-31,0],[39.5,0,-21,0],[39.5,0,-11,0],[39.5,0,-1,0],
+    [39.5,0,9,0],[39.5,0,19,0],[39.5,0,29,0],
+    [39.5,CH,-21,0],[39.5,CH,9,0],[33.5,CH,-16,0],[33.5,CH,14,0],
+
+    /* north: a rank running east-west, stacked at the ends */
+    [-34,0,-34,R],[-24,0,-34,R],[-14,0,-34,R],               /* gap at x=-4 */
+    [6,0,-34,R],[16,0,-34,R],                                /* gap at x=26 */
+    [36,0,-34,R],
+    [-34,CH,-34,R],[16,CH,-34,R],
+    [-29,0,-40,R],[-9,0,-40,R],[11,0,-40,R],[31,0,-40,R],
+
+    /* west: a container maze rather than a corridor, so the two flanks do not
+       play the same way */
+    [-33,0,-24,0],[-38,0,-18,R],[-32,0,-11,R],[-39,0,-4,0],
+    [-33,0,2,R],[-38,0,9,0],[-32,0,16,R],[-39,0,22,0],
+    [-33,0,29,R],[-38,0,35,R],
+    [-33,CH,2,R],[-39,CH,22,0],
+
+    /* south: kept west of x=9 and east of x=27, the loading dock takes the middle */
+    [-28,0,34,R],[-18,0,39,R],[-8,0,34,R],[0,0,39,R],[34,0,38,R],
+    [-18,CH,39,R]
   ];
   const entries = list.map((p,i)=>{
-    const rotY = (i>=13) ? (i%2===0 ? PI/2 : 0) : 0;
+    const rotY = p[3];
     const w = rotY===0 ? CW : CL, l = rotY===0 ? CL : CW;
     addCollider(p[0], p[1], p[2], w, CH, l);
     mapRects.push({x:p[0], z:p[2], w, d:l, c:'#5a6068'});
@@ -2275,7 +2365,14 @@ const CONTAINER_COLORS = [0xa85748, 0x53718c, 0x707f56, 0xab8a3f, 0x8b9096, 0x7e
   const list = [
     [-2,0,-8,0],[1.2,0,-8,0],[6.5,0,4.5,PI/2],[6.5,0,7.4,PI/2],
     [-16,0,18,0],[-13,0,18,0],[9.5,0,-15,PI/2],[9.5,0,-12.2,PI/2],
-    [-24,0,-22,0],[-21,0,-22,0],[17,0,-26,0],[20,0,-26,0]
+    [-24,0,-22,0],[-21,0,-22,0],[17,0,-26,0],[20,0,-26,0],
+    /* apron — a vehicle checkpoint on the south approach, plus chicanes on the
+       lanes into the outer corridors */
+    [-6,0,31,0],[-3,0,31,0],[0.2,0,31,0],[3.4,0,31,0],
+    [30.5,0,-8,PI/2],[30.5,0,-5.2,PI/2],
+    [-30.5,0,6,PI/2],[-30.5,0,8.8,PI/2],
+    [14,0,-30.5,0],[17,0,-30.5,0],
+    [-16,0,-30.5,0],[-13,0,-30.5,0]
   ];
   const im = new THREE.InstancedMesh(g, MAT.concrete, list.length);
   im.castShadow=im.receiveShadow=true;
@@ -2298,6 +2395,68 @@ const CONTAINER_COLORS = [0xa85748, 0x53718c, 0x707f56, 0xab8a3f, 0x8b9096, 0x7e
   box(0.6, 1.1, 3.2, -8.0, 0, -14.0, MAT.concrete, {uvScale:[1,.5], map:'#3b4147'});
 }
 
+/* ---- loading dock (south apron) ----
+   The apron needed one thing that is not cover: a structure with a reason to
+   walk onto it. The platform sits a lorry-bed 1.2m up, which the 0.62m step
+   allowance will not climb, so you either take the ramp at the west end or
+   mantle the lip — and anything standing on it is skylined against the doors. */
+{
+  const DX = 18, DZ = 37, W = 18, D = 6.5, LIP = 1.2;
+  box(W, LIP, D, DX, 0, DZ, MAT.concrete, {uvScale:[6,1], map:'#565d64'});
+  /* rubber buffers along the lip, where trailers back in */
+  for (let i=0;i<5;i++)
+    box(0.5, 0.34, 0.22, DX - W/2 + 2.2 + i*3.4, 0.62, DZ - D/2 - 0.11,
+        MAT.rubber, {collide:false, cast:false});
+  /* ramp up the west end, so the AI has a walkable route on and off */
+  box(3.2, LIP, 3.4, DX - W/2 - 1.6, 0, DZ + 1.2, MAT.concrete,
+      {uvScale:[1,1], collide:false, ground:true});
+  /* warehouse face behind, with roller shutters */
+  box(W + 1.6, 5.4, 0.55, DX, LIP, DZ + D/2 + 0.3, MAT.wall,
+      {uvScale:[6,2], map:'#3b4147'});
+  for (let i=0;i<4;i++){
+    const sx = DX - W/2 + 2.6 + i*4.4;
+    box(3.0, 3.6, 0.20, sx, LIP, DZ + D/2 + 0.08, MAT.darkMetal, {collide:false});
+    box(3.2, 0.22, 0.34, sx, LIP + 3.6, DZ + D/2 + 0.02, MAT.metal, {collide:false});
+  }
+  /* canopy over the bays, held off the wall on brackets */
+  box(W + 1.2, 0.22, 2.4, DX, LIP + 5.4, DZ + D/2 - 0.9, MAT.darkMetal,
+      {collide:false, ground:true, ceiling:true});
+  for (const sx of [DX - W/2 + 1.0, DX, DX + W/2 - 1.0])
+    box(0.16, 0.9, 0.16, sx, LIP + 4.5, DZ + D/2 - 1.9, MAT.metal, {collide:false, cast:false});
+}
+
+/* ---- corner watchtowers ----
+   Two of them, on the north corners. The deck is 3.4m up: out of reach of a
+   mantle from flat ground, but a chained triple jump into the lip makes it,
+   which is the one place on the map that skill of movement buys a position. */
+{
+  const tower = (x, z) => {
+    box(3.6, 3.4, 3.6, x, 0, z, MAT.concrete, {uvScale:[1.5,1.5], map:'#4e555c'});
+    /* corrugated skirt so it does not read as a plain plinth */
+    box(3.8, 1.1, 0.12, x, 1.0, z + 1.84, MAT.container, {collide:false, cast:false});
+    box(3.8, 1.1, 0.12, x, 1.0, z - 1.84, MAT.container, {collide:false, cast:false});
+    const deck = box(4.4, 0.3, 4.4, x, 3.4, z, MAT.darkMetal,
+                     {collide:false, ground:true, ceiling:true});
+    deck.receiveShadow = true;
+    /* waist-high rails on all four sides, gapped on the yard-facing one */
+    const RY = 3.7, RH = 0.95;
+    box(4.4, 0.10, 0.10, x, RY + RH, z + 2.15, MAT.metal, {collide:false, cast:false});
+    box(0.10, 0.10, 4.4, x - 2.15, RY + RH, z, MAT.metal, {collide:false, cast:false});
+    box(0.10, 0.10, 4.4, x + 2.15, RY + RH, z, MAT.metal, {collide:false, cast:false});
+    for (const c of [[-2.15,-2.15],[2.15,-2.15],[-2.15,2.15],[2.15,2.15]])
+      box(0.12, RH, 0.12, x + c[0], RY, z + c[1], MAT.metal, {collide:false, cast:false});
+    /* roof on posts, which is what makes it read as a tower and not a plinth */
+    box(4.8, 0.22, 4.8, x, RY + RH + 0.75, z, MAT.darkMetal,
+        {collide:false, ground:true, ceiling:true});
+    for (const c of [[-2.0,-2.0],[2.0,-2.0],[-2.0,2.0],[2.0,2.0]])
+      box(0.14, 0.75, 0.14, x + c[0], RY + RH, z + c[1], MAT.metal, {collide:false, cast:false});
+    /* a floodlight housing, unlit — the sun is the only real light in the scene */
+    box(0.62, 0.44, 0.30, x, RY + RH + 0.28, z - 2.0, MAT.metal, {collide:false, cast:false});
+  };
+  tower(-39.5, -39.5);
+  tower( 39.5, -39.5);
+}
+
 /* ---- crates (instanced, some stacked) ---- */
 {
   const S=1.25;
@@ -2305,7 +2464,11 @@ const CONTAINER_COLORS = [0xa85748, 0x53718c, 0x707f56, 0xab8a3f, 0x8b9096, 0x7e
   const list = [];
   const clusters = [
     [-3.5,-3.0],[16.0,4.6],[16.0,-5.2],[-13.0,10.0],[8.0,-20.0],
-    [22.0,14.0],[-20.0,-6.0],[3.0,26.0],[-25.5,24.0],[27.0,-24.0],[-2.0,12.0],[16.0,-22.0]
+    [22.0,14.0],[-20.0,-6.0],[3.0,26.0],[-25.5,24.0],[27.0,-24.0],[-2.0,12.0],[16.0,-22.0],
+    /* apron */
+    [-36.0,-30.0],[36.5,-29.0],[-35.5,31.0],[36.0,30.5],[1.0,-37.5],[-3.0,37.0],
+    [-37.5,1.5],[37.0,-2.0],[24.0,-38.0],[-24.5,37.5],[38.0,-14.5],[-38.0,14.0],
+    [30.0,17.0],[-30.5,-17.5],[11.0,31.0],[-11.5,-30.0]
   ];
   for (const [cx,cz] of clusters){
     const n = randI(2,4);
@@ -2331,7 +2494,10 @@ const CONTAINER_COLORS = [0xa85748, 0x53718c, 0x707f56, 0xab8a3f, 0x8b9096, 0x7e
   const list = [];
   const stacks = [
     [6.5,-12.5],[-6.0,14.0],[8.5,16.5],[-10.5,-20.5],[24.0,-24.5],[2.0,22.0],
-    [-17.0,2.0],[13.5,-2.5],[-27.0,14.0],[21.0,10.0]
+    [-17.0,2.0],[13.5,-2.5],[-27.0,14.0],[21.0,10.0],
+    /* apron */
+    [-35.0,-35.5],[35.5,-35.0],[-35.5,35.0],[35.0,35.5],[12.5,-38.0],[-12.0,37.5],
+    [38.0,20.5],[-38.0,-20.0],[30.8,37.6],[-26.0,-38.0],[31.5,-19.0],[-31.0,20.0]
   ];
   for (const [cx,cz] of stacks){
     const n = randI(3,5);
@@ -2551,7 +2717,11 @@ const CONTAINER_COLORS = [0xa85748, 0x53718c, 0x707f56, 0xab8a3f, 0x8b9096, 0x7e
     }
   }
   const palletSpots=[[-5.2,-6.4],[-4.4,-5.2],[14.2,7.8],[14.4,6.6],[21.6,-16.4],
-                     [-12.6,14.2],[2.6,-23.4],[27.2,10.4],[-22.4,3.2],[9.4,20.6]];
+                     [-12.6,14.2],[2.6,-23.4],[27.2,10.4],[-22.4,3.2],[9.4,20.6],
+                     /* apron — stacked against the new container ranks and the dock */
+                     [30.8,-13.6],[31.2,-12.4],[36.6,6.4],[-30.6,-6.2],[-36.8,-31.4],
+                     [-14.2,36.8],[16.4,31.4],[17.6,30.4],[-38.2,28.6],[34.4,25.2],
+                     [-21.6,-37.4],[6.8,-31.2]];
   /* Clutter is scenery, but scenery you can walk through is the loudest
      "unfinished" signal in the map. Anything that stands high enough to read as
      an object gets an AABB; `blocked` already ignores colliders whose top is
@@ -2576,7 +2746,9 @@ const CONTAINER_COLORS = [0xa85748, 0x53718c, 0x707f56, 0xab8a3f, 0x8b9096, 0x7e
   mapRects.push({x:11.1,z:  4.6,w:1.2,d:0.6,c:CLUTTER_MAP});
 
   /* ---------- tyre stacks ---------- */
-  const tyreSpots=[[-6.8,4.2],[17.8,-9.6],[-18.2,-18.6],[24.6,17.2],[6.2,-11.4],[-25.4,-11.0]];
+  const tyreSpots=[[-6.8,4.2],[17.8,-9.6],[-18.2,-18.6],[24.6,17.2],[6.2,-11.4],[-25.4,-11.0],
+                   /* apron */
+                   [30.4,22.6],[-30.8,-24.4],[37.6,-33.2],[-37.2,33.6],[-4.6,-36.2],[22.8,32.4]];
   tyreSpots.forEach(([px,pz])=>{
     const n=randI(2,5);
     for (let k=0;k<n;k++)
@@ -2593,7 +2765,11 @@ const CONTAINER_COLORS = [0xa85748, 0x53718c, 0x707f56, 0xab8a3f, 0x8b9096, 0x7e
 
   /* ---------- traffic cones ---------- */
   const coneSpots=[[-1.2,-10.4],[0.6,-10.9],[2.4,-11.2],[15.4,11.6],[16.9,11.3],
-                   [-16.2,7.4],[8.8,24.2],[22.4,-20.6],[-9.4,-24.2],[4.2,2.6]];
+                   [-16.2,7.4],[8.8,24.2],[22.4,-20.6],[-9.4,-24.2],[4.2,2.6],
+                   /* apron — a taper across the checkpoint and the corridor mouths */
+                   [-8.2,29.6],[-5.4,29.4],[5.6,29.5],[8.4,29.8],
+                   [31.8,-2.4],[32.2,0.4],[-31.6,12.4],[-32.0,15.2],
+                   [19.6,-32.4],[-19.2,33.0],[36.4,-24.6],[-36.0,25.2]];
   coneSpots.forEach(([px,pz])=>{
     const tip = Math.random()<0.18;
     if (tip){
@@ -2623,22 +2799,28 @@ const CONTAINER_COLORS = [0xa85748, 0x53718c, 0x707f56, 0xab8a3f, 0x8b9096, 0x7e
     mapRects.push({x:px,z:pz,w:1.9,d:1.9,c:'#4e555c'});
   }
 
-  /* ---------- cardboard, planks, bricks ---------- */
-  for (let i=0;i<26;i++){
-    const px=rand(-27,27), pz=rand(-27,27);
-    if (Math.abs(px)<3 && Math.abs(pz-24)<4) continue;    // keep spawn clear
+  /* ---------- cardboard, planks, bricks ----------
+     Scatter bounds and counts both follow the yard. Left absolute, these three
+     loops would have kept dropping the same amount of litter inside the original
+     ±27 and left every metre of new ground swept clean, which is the difference
+     between a bigger yard and a yard with a bald ring around it. LITTER scales
+     the counts by area so the density per square metre is unchanged. */
+  const SCAT = HALF - 2.5, LITTER = a => Math.round(a * (HALF/30)**2);
+  for (let i=0,n=LITTER(26);i<n;i++){
+    const px=rand(-SCAT,SCAT), pz=rand(-SCAT,SCAT);
+    if (Math.hypot(px-SPAWN.x, pz-SPAWN.z) < 4.5) continue;   // keep spawn clear
     const w=rand(0.32,0.62), h=rand(0.24,0.5), d=rand(0.32,0.6);
     const flat = Math.random()<0.3;
     put(BOX, MC.card, px, flat?h*0.14:h/2, pz, flat?PI/2*rand(0.8,1.0):0, rand(0,6), flat?rand(-.3,.3):0, w, flat?h*0.28:h, d);
     extraShadows.push({x:px,z:pz,hw:w*0.6,hd:d*0.6,s:0.42});
     if (!flat) addCollider(px, 0, pz, w*1.05, h, d*1.05);
   }
-  for (let i=0;i<14;i++){
-    const px=rand(-27,27), pz=rand(-27,27);
+  for (let i=0,n=LITTER(14);i<n;i++){
+    const px=rand(-SCAT,SCAT), pz=rand(-SCAT,SCAT);
     put(BOX, MC.wood, px, 0.035, pz, 0, rand(0,6), 0, rand(1.2,2.6), 0.06, rand(0.14,0.22));
   }
-  for (let i=0;i<40;i++){
-    const px=rand(-28,28), pz=rand(-28,28);
+  for (let i=0,n=LITTER(40);i<n;i++){
+    const px=rand(-SCAT-1,SCAT+1), pz=rand(-SCAT-1,SCAT+1);
     put(BOX, MC.rusty, px, 0.035, pz, rand(-.3,.3), rand(0,6), rand(-.3,.3), rand(0.1,0.24), 0.07, rand(0.06,0.12));
   }
 
@@ -2760,10 +2942,12 @@ const CONTAINER_COLORS = [0xa85748, 0x53718c, 0x707f56, 0xab8a3f, 0x8b9096, 0x7e
     };
     rackAt(-24.0, 14.0, 0.0);
     rackAt( 6.5, -27.0, PI/2);
+    rackAt(-36.5, -8.0, PI/2);          /* apron */
+    rackAt( 33.0, 24.0, 0.0);
   }
   /* loose pipes on the deck */
-  for (let i=0;i<5;i++){
-    const px=rand(-26,26), pz=rand(-26,26);
+  for (let i=0,n=LITTER(5);i<n;i++){
+    const px=rand(-SCAT+1.5,SCAT-1.5), pz=rand(-SCAT+1.5,SCAT-1.5);
     put(CYL, MC.rusty, px, 0.16, pz, 0, rand(0,6), PI/2, 0.16,rand(3,5.5),0.16);
     extraShadows.push({x:px,z:pz,hw:2.0,hd:0.3,s:0.42});
   }
@@ -4049,8 +4233,12 @@ const WEAPONS = [
     spreadBase:0.0055, spreadMax:0.052, spreadShot:0.0058, spreadRecover:0.075,
     moveSpread:0.010, airSpread:0.020, crouchMult:0.62,
     recoilKick:0.035, recoilRot:0.055, camPitch:0.0125, camYaw:0.0048, fovKick:0.55,
-    reloadTime:2.15, drawTime:0.55, shakeAmt:0.16, range:140,
-    falloffStart:45, falloffRange:60, falloffMin:0.55,
+    /* range and falloff both stepped up with the yard. Left alone, 140m was
+       shorter than the 120m diagonal plus the height you can shoot from, and
+       damage began dropping at 45m on a map where that is now a routine
+       engagement rather than a long one. */
+    reloadTime:2.15, drawTime:0.55, shakeAmt:0.16, range:200,
+    falloffStart:64, falloffRange:85, falloffMin:0.55,
     /* 2.2x. At the old 55 this was 1.47x, which over the ranges this map
        actually plays at barely changed the picture — a man at 25 m stayed
        small enough to hide behind the optic housing. */
@@ -4062,7 +4250,10 @@ const WEAPONS = [
     spreadBase:0.052, spreadMax:0.075, spreadShot:0.006, spreadRecover:0.12,
     moveSpread:0.012, airSpread:0.022, crouchMult:0.80,
     recoilKick:0.115, recoilRot:0.165, camPitch:0.040, camYaw:0.009, fovKick:2.6,
-    reloadTime:2.75, drawTime:0.72, shakeAmt:0.68, range:60,
+    /* range up so it is not capped mid-yard, but the falloff is deliberately NOT
+       scaled: a shotgun that still hurts at 20m is not a shotgun, and that steep
+       drop is the whole reason to carry something else */
+    reloadTime:2.75, drawTime:0.72, shakeAmt:0.68, range:85,
     falloffStart:7, falloffRange:16, falloffMin:0.20,
     adsFov:60, adsSpread:0.72, adsTime:0.20, noise:40,
     shellBig:true, build:buildShotgun },
@@ -4072,8 +4263,8 @@ const WEAPONS = [
     spreadBase:0.0028, spreadMax:0.030, spreadShot:0.0060, spreadRecover:0.090,
     moveSpread:0.008, airSpread:0.016, crouchMult:0.55,
     recoilKick:0.048, recoilRot:0.090, camPitch:0.021, camYaw:0.006, fovKick:0.85,
-    reloadTime:1.55, drawTime:0.30, shakeAmt:0.24, range:110,
-    falloffStart:30, falloffRange:45, falloffMin:0.55,
+    reloadTime:1.55, drawTime:0.30, shakeAmt:0.24, range:156,
+    falloffStart:42, falloffRange:64, falloffMin:0.55,
     adsFov:50, adsSpread:0.34, adsTime:0.20, noise:26,
     shellBig:false, build:buildPistol },
   { id:'sniper', name:'SR-7 LONGBOW', sound:'sniper',
@@ -4082,8 +4273,8 @@ const WEAPONS = [
     spreadBase:0.030, spreadMax:0.070, spreadShot:0.010, spreadRecover:0.10,
     moveSpread:0.022, airSpread:0.045, crouchMult:0.55,
     recoilKick:0.175, recoilRot:0.20, camPitch:0.055, camYaw:0.010, fovKick:2.2,
-    reloadTime:3.10, drawTime:0.85, shakeAmt:0.80, range:220,
-    falloffStart:220, falloffRange:1, falloffMin:1.0,
+    reloadTime:3.10, drawTime:0.85, shakeAmt:0.80, range:300,
+    falloffStart:300, falloffRange:1, falloffMin:1.0,
     adsFov:15, adsSpread:0.012, adsTime:0.20, scope:true, noise:60,
     shellBig:true, build:buildSniper }
 ];
@@ -4362,16 +4553,16 @@ const UPPER_DECK_Y = 4.42;
    are tighter. The three-second grace is what covers the rest. */
 const SPAWN_CLEARANCE = 17;
 
-/* Standing positions on a 1m lattice, per floor. Ground cells must be reachable
-   from the player's spawn: the flood fill is what stops a soldier being dropped
-   into one of the pens that are open floor but sealed by container stacks. The
-   deck has no flood fill to consult — it is above the fill's plane — so its
-   cells are reduced to their largest connected component instead, which buys
-   the same guarantee by a different route. */
-function standingCells(floorY){
+/* Standing positions on a lattice, per floor. Ground cells must be reachable from
+   the player's spawn: the flood fill is what stops a soldier being dropped into
+   one of the pens that are open floor but sealed by container stacks. The deck
+   has no flood fill to consult — it is above the fill's plane — so its cells are
+   reduced to their largest connected component instead, which buys the same
+   guarantee by a different route. */
+function standingCells(floorY, step){
   const cells = [], upper = floorY > 0.5;
-  for (let x=-HALF+2; x<=HALF-2; x+=1){
-    for (let z=-HALF+2; z<=HALF-2; z+=1){
+  for (let x=-HALF+2; x<=HALF-2; x+=step){
+    for (let z=-HALF+2; z<=HALF-2; z+=step){
       if (Math.hypot(x-SPAWN.x, z-SPAWN.z) < SPAWN_CLEARANCE) continue;
       if (blocked(x, z, floorY+0.30, floorY+1.65, 0.5)) continue;
       if (upper){
@@ -4384,9 +4575,12 @@ function standingCells(floorY){
   return cells;
 }
 
-/* largest 8-connected group of cells on the lattice */
-function largestComponent(cells){
-  const key = (x,z) => (x+64)*256 + (z+64);
+/* Largest 8-connected group of cells. Keyed by lattice index rather than raw
+   coordinate so it is correct for any step and any half-extent, including the
+   fractional one this map uses. */
+function largestComponent(cells, step){
+  const idx = v => Math.round((v + HALF) / step);
+  const key = (x,z) => idx(x)*4096 + idx(z);
   const set = new Map(cells.map(c => [key(c[0],c[1]), c]));
   const seen = new Set();
   let best = [];
@@ -4399,7 +4593,7 @@ function largestComponent(cells){
       comp.push(cur);
       for (let dx=-1; dx<=1; dx++) for (let dz=-1; dz<=1; dz++){
         if (!dx && !dz) continue;
-        const nk = key(cur[0]+dx, cur[1]+dz);
+        const nk = key(cur[0]+dx*step, cur[1]+dz*step);
         if (set.has(nk) && !seen.has(nk)){ seen.add(nk); q.push(nk); }
       }
     }
@@ -4408,12 +4602,20 @@ function largestComponent(cells){
   return best;
 }
 
-/* Scanning the lattice costs a raycast per cell on the deck pass, so it is done
-   once — the world is static, only the picking changes between rounds. */
+/* The deck pass is the expensive one: it needs a downward raycast per cell
+   against every ground mesh in the map, and that cost grows with the square of
+   the extent — at 1m over this yard it is nearly seven thousand rays. The deck
+   only has to supply a handful of anchors, so it is sampled at 2m for a quarter
+   of the rays, while the ground pass, which raycasts not at all, stays at 1m.
+   Both are done once and cached: the world is static, only the picking changes
+   between rounds. */
+const GROUND_STEP = 1, DECK_STEP = 2;
 let _cells = null;
 function cellPools(){
-  if (!_cells) _cells = { ground: standingCells(0),
-                          deck: largestComponent(standingCells(UPPER_DECK_Y)) };
+  if (!_cells) _cells = {
+    ground: standingCells(0, GROUND_STEP),
+    deck:   largestComponent(standingCells(UPPER_DECK_Y, DECK_STEP), DECK_STEP)
+  };
   return _cells;
 }
 
@@ -4488,7 +4690,9 @@ function buildRoutes(n){
   const { ground, deck } = cellPools();
   const routes = [];
   const nUpper = Math.min(upperShare(n), deck.length);
-  const deckRing = ringFor(deck.length, nUpper), groundRing = ringFor(ground.length, n-nUpper);
+  /* area, not cell count — the two pools are sampled at different steps */
+  const deckRing = ringFor(deck.length*DECK_STEP**2, nUpper),
+        groundRing = ringFor(ground.length*GROUND_STEP**2, n-nUpper);
   for (const [cx,cz] of spreadAnchors(deck, nUpper))
     routes.push({ upper:true, legs:anchorRoute(cx, cz, UPPER_DECK_Y, true, deckRing) });
   for (const [cx,cz] of spreadAnchors(ground, n - routes.length))
@@ -4582,7 +4786,6 @@ function rebuildHitMeshes(){
    11. PLAYER + GAME STATE
    ========================================================================= */
 const STAND_H = 1.72, CROUCH_H = 1.08, P_RADIUS = 0.36;
-const SPAWN = { x:0, z:24 };
 const GRACE_TIME = 3.0;
 const player = {
   pos:new THREE.Vector3(SPAWN.x, 0, SPAWN.z),   // FEET
@@ -4651,6 +4854,7 @@ $('sKills').innerHTML = `0<span>/${enemyCount}</span>`;
    both run through resetWorldState. */
 const countRange = $('countRange'), countVal = $('countVal'), settingEl = $('setting');
 countRange.min = ENEMY_MIN; countRange.max = ENEMY_MAX; countRange.value = ENEMY_DEFAULT;
+$('scaleMin').textContent = ENEMY_MIN; $('scaleMax').textContent = ENEMY_MAX;
 countRange.addEventListener('input', () => {
   enemyCount = clamp(parseInt(countRange.value,10) || ENEMY_DEFAULT, ENEMY_MIN, ENEMY_MAX);
   countVal.textContent = enemyCount;
@@ -4879,7 +5083,11 @@ function updateCrosshair(dt){
 
 /* minimap */
 function drawMinimap(){
-  const ctx = UI.mctx, S = 172, cx=S/2, cy=S/2, scale = 2.35;
+  /* The scale was a literal tuned to a 60m yard: at 2.35 pixels per metre the
+     172px dial reaches 36.6m from the player, which on this yard would put the
+     whole outer apron off the edge of the map. Derived from the half-extent
+     instead, with a small margin so the fence line stays inside the bezel. */
+  const ctx = UI.mctx, S = 172, cx=S/2, cy=S/2, scale = (cx-3)/(HALF*1.02);
   ctx.clearRect(0,0,S,S);
   ctx.save();
   ctx.beginPath(); ctx.arc(cx,cy,cx-2,0,7); ctx.clip();
@@ -4896,9 +5104,14 @@ function drawMinimap(){
   ctx.strokeRect(-HALF,-HALF,HALF*2,HALF*2);
   /* grid */
   ctx.strokeStyle='rgba(120,140,160,.10)'; ctx.lineWidth=0.3;
-  for (let i=-HALF;i<=HALF;i+=10){
-    ctx.beginPath(); ctx.moveTo(i,-HALF); ctx.lineTo(i,HALF); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-HALF,i); ctx.lineTo(HALF,i); ctx.stroke();
+  /* stepped out to 15m and walked from the origin rather than the edge: at 10m
+     the larger yard carries half again as many lines, and a half-extent that is
+     not a multiple of the step would sit them all off-centre */
+  for (let i=0;i<=HALF;i+=15){
+    for (const s of (i===0 ? [0] : [-i,i])){
+      ctx.beginPath(); ctx.moveTo(s,-HALF); ctx.lineTo(s,HALF); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-HALF,s); ctx.lineTo(HALF,s); ctx.stroke();
+    }
   }
   /* footprints */
   for (const r of mapRects){
@@ -5158,7 +5371,9 @@ function fireWeapon(){
 
   /* --- feedback --- */
   SFX.gunshot(w.sound, 0, 0);
-  alertToGunfire(w.noise || 34);
+  /* the per-weapon noise values are metres on the old yard; scaled here rather
+     than in four weapon tables so the ratios between the guns stay put */
+  alertToGunfire((w.noise || 34) * (HALF/30));
   w.spread = Math.min(w.spreadMax, w.spread + w.spreadShot);
 
   /* Recoil is a pattern, not noise: a hard first kick, a settled climb, then a
@@ -5213,7 +5428,7 @@ function alertSquad(radius, spread, line, chance){
   /* as the squad thins the survivors stop being a patrol and start being a
      manhunt — otherwise the last man is a hide-and-seek chore on the clock */
   const alive = enemies.reduce((n,e)=> n + (e.dead?0:1), 0);
-  if (alive <= 3) radius = Math.max(radius, 200);
+  if (alive <= 3) radius = Math.max(radius, DIAG*2);
   let called = false;
   for (const e of enemies){
     if (e.dead || e.state===ST.COMBAT) continue;
@@ -5271,13 +5486,15 @@ function killEnemy(e, head, dir){
   UI.killCount.textContent = G.kills;
   UI.edgeGlow.style.opacity = '0.9';
   setTimeout(()=>UI.edgeGlow.style.opacity='0', 130);
-  /* a man going down is louder than the shot that did it, and the squad's
-     reach grows as it shrinks — the survivors come to you. Scaled by the
-     fraction of the squad down rather than the raw count: at 7m per kill the
-     radius passed the yard's 85m diagonal on the last man of ten, but would
-     have done it by the tenth of twenty-five, turning the whole back half of
-     the round into one standing manhunt. */
-  alertSquad(30 + (G.kills/G.total)*70, 5,
+  /* A man going down is louder than the shot that did it, and the squad's reach
+     grows as it shrinks — the survivors come to you. Two things this has to be
+     independent of: the squad size, since a fixed metres-per-kill went map-wide
+     a third of the way through a large squad and turned the rest of the round
+     into one standing manhunt; and the map size, since the original 30 and 70
+     were metres chosen so the radius crossed an 85m diagonal near the end. Both
+     are now fractions — of the squad, and of the diagonal — so the curve has the
+     same shape at any count on any size of yard. */
+  alertSquad(DIAG*(0.35 + (G.kills/G.total)*0.83), 5,
              ex => pick([e.name+' IS DOWN — '+bearingWord(ex), 'MAN DOWN, CONVERGE',
                          'WE LOST '+e.name+', PUSH IN']), 0.85);
   if (G.kills>=G.total) endGame(true);
@@ -5323,7 +5540,7 @@ function damagePlayer(amount, fromPos){
    16. ENEMY AI
    ========================================================================= */
 const losRay = new THREE.Raycaster();
-losRay.far = 70;
+losRay.far = 100;          // per-call far always overrides this; kept above the sight cap
 const _eDir = new THREE.Vector3(), _ePos = new THREE.Vector3(), _eEye = new THREE.Vector3();
 const _revDir = new THREE.Vector3();
 
@@ -5338,7 +5555,11 @@ function hasLOS(e){
   playerChest(_ePos);
   _eDir.subVectors(_ePos,_eEye);
   const dist = _eDir.length();
-  if (dist > 52) return false;
+  /* How far a soldier will spot you. Held at the same fraction of the yard it was
+     tuned to — 52m of an 85m diagonal — rather than left absolute, which on a
+     yard this size would have made most of the apron a place you simply cannot
+     be seen from and turned every approach into a walk. */
+  if (dist > DIAG*0.61) return false;
   _eDir.divideScalar(dist);
   /* field of view (skip when already alerted — they've been told where you are) */
   if (!e.alerted){
@@ -5410,7 +5631,7 @@ function enemyShoot(e, atPoint){
   SFX.gunshot(Math.random()<0.5?'rifle':'pistol', pan, dist);
 
   /* trace against the world, then test the player capsule */
-  losRay.set(muzzle, dir); losRay.far = 90;
+  losRay.set(muzzle, dir); losRay.far = HALF*3;
   const hits = losRay.intersectObjects(worldSolid, false);
   const wallDist = hits.length ? hits[0].distance : 90;
 
@@ -5935,7 +6156,9 @@ function updateEnemy(e, dt){
 
   /* nameplate — suppressed on the menus, where it would read as debug overlay */
   const dCam = obj.position.distanceTo(camera.position);
-  e.tag.sprite.visible = G.started && dCam < 46;
+  /* raised with the yard: at 46m a tag went dark well inside the range you can
+     now be shot from, so a man shooting at you had no nameplate */
+  e.tag.sprite.visible = G.started && dCam < 65;
   if (e.tag.sprite.visible){
     /* the sprite lives in world space, so a narrowed FOV magnifies it along
        with everything else — at 15x a nameplate covers the man wearing it.
@@ -6672,11 +6895,13 @@ function frame(now){
        so the containers pass close enough to give real parallax */
     if (!G.started && !G.over){
       const t = now*0.000048;
-      const r = 23.0 + Math.sin(t*0.83)*2.4;
+      /* orbit radius follows the yard, or on a larger map the crane circles
+         entirely inside the container stacks and the menu is a wall of steel */
+      const r = HALF*0.765 + Math.sin(t*0.83)*2.8;
       /* held above the stacks: at eye height the path scrapes container roofs
          and the frame fills with a single flat panel */
-      camera.position.set(Math.sin(t)*r, 6.3 + Math.sin(t*1.31)*0.9, Math.cos(t)*r*1.04);
-      camera.lookAt(Math.sin(t+0.7)*4.5, 1.4 + Math.sin(t*0.7)*0.4, Math.cos(t+0.7)*4.5);
+      camera.position.set(Math.sin(t)*r, 7.4 + Math.sin(t*1.31)*0.9, Math.cos(t)*r*1.04);
+      camera.lookAt(Math.sin(t+0.7)*5.4, 1.4 + Math.sin(t*0.7)*0.4, Math.cos(t+0.7)*5.4);
       camera.rotateZ(Math.sin(t*1.9)*0.012);
       if (camera.fov !== BASE_FOV - 8){ camera.fov = BASE_FOV - 8; camera.updateProjectionMatrix(); }
       /* enemies aren't ticking here, so their nameplates have to be cleared
