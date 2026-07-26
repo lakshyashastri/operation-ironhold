@@ -3,15 +3,22 @@
 A complete first-person shooter that runs in a browser tab. One HTML file, no build step,
 no package manager, and not a single image, audio or model file on disk.
 
-**[Play it here](https://starknightt.github.io/operation-ironhold/)**
+> Forked from **[StarKnightt/operation-ironhold](https://github.com/StarKnightt/operation-ironhold)**
+> — MIT, © StarKnightt. The original game and the five prompts that produced it are entirely
+> upstream's work. This fork adds a configurable garrison size, removes the round timer,
+> generates patrol routes instead of hand-placing them, adds a third air jump and carries more
+> reserve ammunition.
+
+**[Play the original here](https://starknightt.github.io/operation-ironhold/)**
 
 ![Gameplay](screenshots/gameplay.jpg)
 
-Ten hostiles hold a container yard in Sector 7. You have three minutes to clear it.
+A garrison holds a container yard in Sector 7. Clear it. You pick how many are down there —
+anywhere from ten to a hundred — and there is no clock.
 
 The entire game — renderer setup, world generation, weapon handling, enemy AI, audio
 synthesis, post-processing and HUD — is about 6,500 lines of JavaScript and CSS inlined
-into a single 290 KB `index.html`. The only external resource is three.js r128, pulled
+into a single 304 KB `index.html`. The only external resource is three.js r128, pulled
 from a CDN. Everything else is generated at runtime.
 
 It was built by an AI agent from five prompts, recorded verbatim in
@@ -47,7 +54,7 @@ will not play on a phone.
 | `R` | Reload |
 | `Shift` | Sprint, or hold breath while scoped |
 | `Ctrl` | Crouch |
-| `Space` | Jump; tap again in the air to double jump; hold near a ledge to mantle |
+| `Space` | Jump; tap twice more in the air for two further hops; hold near a ledge to mantle |
 | `1` `2` `3` `4` | M4 carbine / KS-12 pump / P-9 sidearm / SR-7 Longbow |
 | `V` | Toggle the rifle between full auto and semi |
 | Mouse wheel | Cycle weapons |
@@ -55,25 +62,30 @@ will not play on a phone.
 
 ## The round
 
-Eliminate all ten hostiles inside 3:00. You start with 100 health and 50 armor, where armor
-absorbs half of incoming damage until it is gone.
+Eliminate every hostile. The slider on the start screen sets how many, from 10 to 100, and
+defaults to 25; the value applies to the next round, including `REDEPLOY`. There is no time
+limit — the round ends when the last man is down, or when one of them puts you down.
+
+You start with 100 health and 50 armor, where armor absorbs half of incoming damage until it
+is gone. Neither regenerates and there are no pickups, so the 150 you start with is the whole
+budget however many hostiles you chose.
 
 Hostiles hold fire for the first three seconds so you can get your bearings, and a combat
 director caps the number shooting at you at any one moment to two. The rest keep
 manoeuvring. That single constraint is what keeps a firefight readable instead of
 collapsing into crossfire you cannot answer.
 
-Dying or running out the clock ends the round. The report screen shows eliminations,
-headshots, accuracy and time survived.
+Dying ends the round. The report screen shows eliminations, headshots, accuracy and time
+survived — the stopwatch still runs, it just is not a limit any more.
 
 ## Weapons
 
 | Slot | Weapon | Magazine | Reserve | Behaviour |
 | --- | --- | --- | --- | --- |
-| 1 | M4 Carbine | 30 | 210 | 760 rpm full auto, `V` switches to semi |
-| 2 | KS-12 Pump | 8 | 48 | Nine pellets per shell, pump between shots |
-| 3 | P-9 Sidearm | 15 | 90 | 430 rpm semi automatic, fastest draw |
-| 4 | SR-7 Longbow | 5 | 25 | Bolt action, a body hit kills |
+| 1 | M4 Carbine | 30 | 480 | 760 rpm full auto, `V` switches to semi |
+| 2 | KS-12 Pump | 8 | 128 | Nine pellets per shell, pump between shots |
+| 3 | P-9 Sidearm | 15 | 240 | 430 rpm semi automatic, fastest draw |
+| 4 | SR-7 Longbow | 5 | 65 | Bolt action, a body hit kills |
 
 Each carries a viewmodel built from primitives with gloved hands, sways against mouse
 movement, bobs in time with footsteps, dips off screen to reload and ejects brass that
@@ -105,16 +117,30 @@ which makes a miss genuinely expensive.
 ## Movement
 
 Container tops, crates, barrel stacks, the wrecked flatbed and every other solid prop are
-walkable. A jump clears roughly 1.2m and the double jump adds another 0.9m. Holding `Space`
+walkable. A jump clears roughly 1.2m, and two further air hops add about 0.9m and 0.7m, so a
+fully chained triple jump tops out around 2.7m. Holding `Space`
 while airborne near a ledge up to about 1.95m above your feet pulls you up over it, which is
 what gets you onto a container roof from flat ground and onto the sniper deck without the
 ramp.
 
 ## Enemies
 
-Ten soldiers patrol waypoints, routing around cover with a grid pathfinder over the same
+Soldiers patrol waypoints, routing around cover with a grid pathfinder over the same
 colliders the player obeys. Spotting you takes a human 300 to 800ms before they react, and
 they call it over the radio when they do.
+
+Patrol routes are generated rather than authored, because the count is a setting and hand
+placement does not scale to a hundred. Anchors are chosen by farthest-point sampling over the
+floor a body can actually stand on, so the garrison fills the yard instead of bunching, and
+each anchor gets a small loop whose radius shrinks as the yard fills. Ground anchors are
+filtered through the same flood fill from the player's spawn that the waypoint snapper uses,
+which is what stops a soldier being dropped into one of the pens that are open floor but
+sealed by container stacks. A proportional share holds the upper deck at any count. Nothing
+spawns within 17m of where you start.
+
+As the squad thins, the radius of the "man down" callout grows, so survivors converge on you
+rather than waiting to be found. That radius is proportional to the count, so the curve of a
+ten-man round and a hundred-man round has the same shape.
 
 In a fight they break for cover, strafe, flank, reload, and refuse to fire when their muzzle
 is blocked even if they can see you over it. Line of sight is traced from the player's end
@@ -145,6 +171,14 @@ frame rate. Repeated props are drawn with `InstancedMesh` grouped by colour. Sta
 is merged into single draw calls. Tracers, decals, shell casings and particles are pooled.
 Shadow casting is trimmed by bounding-box size, which cut roughly two thirds of the shadow
 pass for objects that only ever contributed a sub-pixel smudge.
+
+Soldiers dominate the frame at high counts, because each one is 26 merged buffers and 8
+shadow casters that are not shared between them. Measured draw calls per frame run about 300
+at ten hostiles, 620 at twenty-five and 2,300 at a hundred, and the worst-case AI update — the
+whole garrison in combat at once — runs about 0.5ms, 1.1ms and 4-10ms respectively. The top of
+the slider is deliberately past what a mid-range machine will hold at 60fps; the dynamic
+resolution scaler will not rescue it either, since the cost is draw-call submission rather
+than fill.
 
 ## Implementation notes
 

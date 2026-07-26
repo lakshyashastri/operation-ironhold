@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>OPERATION IRONHOLD — Warehouse District</title>
-<meta name="description" content="Ten hostiles hold a container yard. You have three minutes. The entire game — world, weapons, AI and audio — is one 290 KB HTML file with no build step and no asset files.">
+<meta name="description" content="Ten to a hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 304 KB HTML file with no build step and no asset files.">
 <meta name="author" content="Prasenjit">
 <meta name="theme-color" content="#0a0c0e">
 <link rel="canonical" href="https://starknightt.github.io/operation-ironhold/">
@@ -13,7 +13,7 @@
 <meta property="og:site_name" content="Operation Ironhold">
 <meta property="og:url" content="https://starknightt.github.io/operation-ironhold/">
 <meta property="og:title" content="Operation Ironhold — a first-person shooter in one HTML file">
-<meta property="og:description" content="Ten hostiles hold a container yard. You have three minutes. The entire game — world, weapons, AI and audio — is one 290 KB HTML file with no build step and no asset files.">
+<meta property="og:description" content="Ten to a hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 304 KB HTML file with no build step and no asset files.">
 <meta property="og:image" content="https://starknightt.github.io/operation-ironhold/og.jpg">
 <meta property="og:image:secure_url" content="https://starknightt.github.io/operation-ironhold/og.jpg">
 <meta property="og:image:type" content="image/jpeg">
@@ -25,7 +25,7 @@
 <meta name="twitter:site" content="@Star_Knight12">
 <meta name="twitter:creator" content="@Star_Knight12">
 <meta name="twitter:title" content="Operation Ironhold — a first-person shooter in one HTML file">
-<meta name="twitter:description" content="Ten hostiles hold a container yard. You have three minutes. The entire game — world, weapons, AI and audio — is one 290 KB HTML file with no build step and no asset files.">
+<meta name="twitter:description" content="Ten to a hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 304 KB HTML file with no build step and no asset files.">
 <meta name="twitter:image" content="https://starknightt.github.io/operation-ironhold/og.jpg">
 <meta name="twitter:image:alt" content="First-person view down a container yard, an M4 carbine firing at a hostile, with minimap, timer and ammo counter on the HUD.">
 <style>
@@ -188,10 +188,11 @@
 
   /* top center */
   #top{position:absolute;left:50%;top:20px;transform:translateX(-50%);text-align:center;}
-  #timer{font-size:26px;font-weight:700;letter-spacing:.06em;line-height:1;text-shadow:0 2px 8px #000;}
-  #timer.warn{color:var(--red);animation:bl 1s steps(1,end) infinite;}
-  #objective{font-size:10px;letter-spacing:.26em;color:rgba(223,230,236,.55);margin-top:5px;font-weight:600;}
-  #objective b{color:var(--amber);font-size:12px;}
+  /* the objective is alone up here now that the round has no clock, so it carries
+     the weight the timer used to */
+  #objective{font-size:12px;letter-spacing:.26em;color:rgba(223,230,236,.62);font-weight:600;
+             text-shadow:0 2px 8px #000;}
+  #objective b{color:var(--amber);font-size:19px;}
 
   /* damage direction */
   #dmgDirs{position:absolute;left:50%;top:50%;width:0;height:0;}
@@ -253,6 +254,28 @@
   @keyframes pulse{0%,100%{box-shadow:0 0 0 rgba(255,179,64,0);background:rgba(255,179,64,.06)}
                    50%{box-shadow:0 0 34px rgba(255,179,64,.22);background:rgba(255,179,64,.14)}}
   .hint{margin-top:clamp(7px,1.5vh,15px);font-size:10px;letter-spacing:.2em;color:rgba(223,230,236,.34);}
+  /* garrison size selector. cursor goes back to default because the whole start
+     screen is a click target and this strip is the one part that is not */
+  #setting{margin-top:clamp(12px,2.8vh,28px);width:100%;cursor:default;}
+  #setting .row{display:grid;grid-template-columns:96px 1fr 58px;align-items:center;gap:11px;}
+  #setting .lbl{font-size:10.5px;letter-spacing:.14em;color:rgba(223,230,236,.58);font-weight:600;}
+  #setting .val{font-size:20px;font-weight:800;letter-spacing:.02em;color:var(--amber);
+    text-align:right;line-height:1;text-shadow:0 0 12px rgba(255,179,64,.35);}
+  #countRange{-webkit-appearance:none;appearance:none;width:100%;height:20px;background:transparent;
+    cursor:pointer;display:block;}
+  #countRange::-webkit-slider-runnable-track{height:3px;background:rgba(223,230,236,.16);
+    border:0;border-radius:0;}
+  #countRange::-moz-range-track{height:3px;background:rgba(223,230,236,.16);border:0;}
+  #countRange::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:11px;height:17px;
+    margin-top:-7px;background:var(--amber);border:0;border-radius:1px;
+    box-shadow:0 0 12px rgba(255,179,64,.5);}
+  #countRange::-moz-range-thumb{width:11px;height:17px;background:var(--amber);border:0;border-radius:1px;
+    box-shadow:0 0 12px rgba(255,179,64,.5);}
+  #countRange:focus{outline:none;}
+  #countRange:focus::-webkit-slider-thumb{box-shadow:0 0 0 3px rgba(255,179,64,.28),0 0 12px rgba(255,179,64,.5);}
+  #countRange:focus::-moz-range-thumb{box-shadow:0 0 0 3px rgba(255,179,64,.28),0 0 12px rgba(255,179,64,.5);}
+  #setting .scale{display:flex;justify-content:space-between;margin:5px 0 0 107px;
+    font-size:8.5px;letter-spacing:.24em;color:rgba(223,230,236,.24);}
   /* corner slugs sell the frame as a screen rather than a web page */
   .slug{position:absolute;font-size:9px;letter-spacing:.28em;color:rgba(223,230,236,.26);z-index:1;}
   .slug.tl{top:26px;left:30px;} .slug.tr{top:26px;right:30px;text-align:right;}
@@ -318,8 +341,7 @@
   </div>
 
   <div id="top">
-    <div id="timer" class="mono">3:00</div>
-    <div id="objective"><b id="killCount">0</b> / 10 ELIMINATED</div>
+    <div id="objective"><b id="killCount">0</b> / <span id="killTotal">25</span> ELIMINATED</div>
   </div>
 
   <div id="feed"></div>
@@ -353,7 +375,7 @@
 <div class="screen" id="startScreen">
   <div class="slug tl">IRONHOLD // SECTOR 7</div>
   <div class="slug tr">CONTAINER YARD 04<br>GRID 118-042</div>
-  <div class="slug br">10 HOSTILES · 03:00 ON THE CLOCK</div>
+  <div class="slug br"><span id="slugHostiles">25</span> HOSTILES HOLDING THE YARD</div>
   <div class="col">
     <div class="eyebrow">CLASSIFIED // TASK FORCE IRONHOLD</div>
     <div class="title">WAREHOUSE<br>DISTRICT<small>SECTOR 7 — HOSTILE</small></div>
@@ -364,15 +386,24 @@
       <div class="key"><kbd>LMB</kbd> <span>FIRE</span></div>
       <div class="key"><kbd>RMB</kbd> <span>AIM DOWN SIGHTS</span></div>
       <div class="key"><kbd>SHIFT</kbd> <span>SPRINT · HOLD BREATH</span></div>
-      <div class="key"><kbd>SPACE</kbd> <span>JUMP · DOUBLE · MANTLE</span></div>
+      <div class="key"><kbd>SPACE</kbd> <span>JUMP · TRIPLE · MANTLE</span></div>
       <div class="key"><kbd>CTRL</kbd> <span>CROUCH</span></div>
       <div class="key"><kbd>R</kbd> <span>RELOAD</span></div>
       <div class="key"><kbd>1–4 / WHEEL</kbd> <span>WEAPONS</span></div>
       <div class="key"><kbd>V</kbd> <span>FIRE MODE</span></div>
       <div class="key"><kbd>ESC</kbd> <span>PAUSE</span></div>
     </div>
+    <div id="setting">
+      <div class="row">
+        <span class="lbl">HOSTILES</span>
+        <input type="range" id="countRange" min="10" max="100" step="1" value="25"
+               aria-label="Number of hostiles">
+        <span class="val" id="countVal">25</span>
+      </div>
+      <div class="scale"><span>10</span><span>100</span></div>
+    </div>
     <div class="cta">PRESS TO START</div>
-    <div class="hint">ELIMINATE ALL 10 HOSTILES BEFORE THE CLOCK RUNS OUT</div>
+    <div class="hint">ELIMINATE ALL <span id="hintHostiles">25</span> HOSTILES — NO TIME LIMIT</div>
   </div>
 </div>
 
@@ -4013,7 +4044,7 @@ function buildSniper(){
    ========================================================================= */
 const WEAPONS = [
   { id:'rifle', name:'M4 CARBINE', sound:'rifle',
-    magSize:30, reserve:210, maxReserve:210, damage:31, headMult:2.0,
+    magSize:30, reserve:480, maxReserve:480, damage:31, headMult:2.0,
     rpm:760, auto:true, semiToggle:true, pellets:1,
     spreadBase:0.0055, spreadMax:0.052, spreadShot:0.0058, spreadRecover:0.075,
     moveSpread:0.010, airSpread:0.020, crouchMult:0.62,
@@ -4026,7 +4057,7 @@ const WEAPONS = [
     adsFov:38, adsSpread:0.42, adsTime:0.20, noise:36,
     shellBig:false, build:buildRifle },
   { id:'shotgun', name:'KS-12 PUMP', sound:'shotgun',
-    magSize:8, reserve:48, maxReserve:48, damage:15, headMult:1.7,
+    magSize:8, reserve:128, maxReserve:128, damage:15, headMult:1.7,
     rpm:999, auto:false, semiToggle:false, pellets:9, pumpTime:0.62,
     spreadBase:0.052, spreadMax:0.075, spreadShot:0.006, spreadRecover:0.12,
     moveSpread:0.012, airSpread:0.022, crouchMult:0.80,
@@ -4036,7 +4067,7 @@ const WEAPONS = [
     adsFov:60, adsSpread:0.72, adsTime:0.20, noise:40,
     shellBig:true, build:buildShotgun },
   { id:'pistol', name:'P-9 SIDEARM', sound:'pistol',
-    magSize:15, reserve:90, maxReserve:90, damage:35, headMult:2.0,
+    magSize:15, reserve:240, maxReserve:240, damage:35, headMult:2.0,
     rpm:430, auto:false, semiToggle:false, pellets:1,
     spreadBase:0.0028, spreadMax:0.030, spreadShot:0.0060, spreadRecover:0.090,
     moveSpread:0.008, airSpread:0.016, crouchMult:0.55,
@@ -4046,7 +4077,7 @@ const WEAPONS = [
     adsFov:50, adsSpread:0.34, adsTime:0.20, noise:26,
     shellBig:false, build:buildPistol },
   { id:'sniper', name:'SR-7 LONGBOW', sound:'sniper',
-    magSize:5, reserve:25, maxReserve:25, damage:125, headMult:2.0,
+    magSize:5, reserve:65, maxReserve:65, damage:125, headMult:2.0,
     rpm:999, auto:false, semiToggle:false, pellets:1, boltTime:1.5,
     spreadBase:0.030, spreadMax:0.070, spreadShot:0.010, spreadRecover:0.10,
     moveSpread:0.022, airSpread:0.045, crouchMult:0.55,
@@ -4094,7 +4125,19 @@ const WICONS = [
 /* =========================================================================
    10. ENEMIES
    ========================================================================= */
-const ENEMY_NAMES = ['VIPER','GHOST','REAPER','HAVOC','STRIKER','COBRA','TALON','WOLF','DIESEL','SHADOW'];
+/* How many hostiles hold the yard, chosen from the start screen. Patrol routes
+   are generated to match, so this is a free-running number rather than an index
+   into a fixed table. G.total holds what actually spawned. */
+const ENEMY_MIN = 10, ENEMY_MAX = 100, ENEMY_DEFAULT = 25;
+let enemyCount = ENEMY_DEFAULT;
+/* Callsigns, in order. Past the end of the list they repeat with a numeric
+   suffix — VIPER-2, GHOST-2 — which stays unique to a hundred and still fits
+   inside the 256px tag canvas at 27px bold. */
+const ENEMY_NAMES = ['VIPER','GHOST','REAPER','HAVOC','STRIKER','COBRA','TALON','WOLF','DIESEL','SHADOW',
+                     'ANVIL','JACKAL','RAZOR','MAMBA','VULTURE','HAMMER','KODIAK','SABRE','ONYX','BANSHEE',
+                     'GRIZZLY','FALCON','RONIN','WARDEN','BRUISER'];
+const enemyName = i => ENEMY_NAMES[i % ENEMY_NAMES.length]
+                     + (i >= ENEMY_NAMES.length ? '-' + (Math.floor(i/ENEMY_NAMES.length)+1) : '');
 /* Multi-scale blob camo. Flat-coloured primitives are the single loudest tell
    that a model was generated rather than made; a pattern at a believable
    physical scale kills it faster than any amount of extra geometry. */
@@ -4304,20 +4347,154 @@ function makeTag(name){
   return { sprite:spr, draw, tex:t };
 }
 
-/* patrol routes (loops of waypoints) */
-const ROUTES = [
-  [[16,-22],[16,-6],[16,8],[16,20],[16,4]],                 // corridor north/south
-  [[-22,-10],[-18,0],[-22,3],[-26,-6]],                     // second floor (upper)
-  [[-2,6],[5,-4],[0,-10],[-5,-2]],                          // centre / vehicle
-  [[16,20],[8,22],[2,16],[10,10]],                          // south-east
-  [[-14,-22],[-4,-25],[4,-20],[-6,-16]],                    // north strip
-  [[24,-8],[24,-18],[18,-22],[20,-10]],                     // guard shack
-  [[-20,-6],[-24,2],[-18,4],[-16,-4]],                      // second floor (upper) 2
-  [[-6,20],[2,24],[-10,26],[-16,20]],                       // south open
-  [[-14,10],[-6,12],[-10,4],[-16,2]],                       // west yard
-  [[8,-14],[2,-6],[10,2],[14,-10]]                          // roamer
-];
-const UPPER_ROUTES = new Set([1,6]);
+/* patrol routes
+   -------------
+   Generated rather than listed. The count is a menu setting that reaches 100,
+   which is far past what hand-placed loops can cover, and hand placement is
+   what made the original ten cluster — half the yard held nobody while three
+   men shared the same lane. Anchors are spread by farthest-point sampling over
+   the floor a body can actually stand on, then each gets a small loop. */
+
+const UPPER_DECK_Y = 4.42;
+/* Breathing room around the player's start. Applies to anchors, and legs reach up
+   to one ring beyond their anchor, so the closest a soldier can actually begin is
+   this minus the ring — about 12m at low counts, more at high ones where rings
+   are tighter. The three-second grace is what covers the rest. */
+const SPAWN_CLEARANCE = 17;
+
+/* Standing positions on a 1m lattice, per floor. Ground cells must be reachable
+   from the player's spawn: the flood fill is what stops a soldier being dropped
+   into one of the pens that are open floor but sealed by container stacks. The
+   deck has no flood fill to consult — it is above the fill's plane — so its
+   cells are reduced to their largest connected component instead, which buys
+   the same guarantee by a different route. */
+function standingCells(floorY){
+  const cells = [], upper = floorY > 0.5;
+  for (let x=-HALF+2; x<=HALF-2; x+=1){
+    for (let z=-HALF+2; z<=HALF-2; z+=1){
+      if (Math.hypot(x-SPAWN.x, z-SPAWN.z) < SPAWN_CLEARANCE) continue;
+      if (blocked(x, z, floorY+0.30, floorY+1.65, 0.5)) continue;
+      if (upper){
+        const g = groundAt(x, z, floorY+0.10);
+        if (g === null || Math.abs(g-floorY) > 0.12) continue;
+      } else if (!walkable(x, z)) continue;
+      cells.push([x,z]);
+    }
+  }
+  return cells;
+}
+
+/* largest 8-connected group of cells on the lattice */
+function largestComponent(cells){
+  const key = (x,z) => (x+64)*256 + (z+64);
+  const set = new Map(cells.map(c => [key(c[0],c[1]), c]));
+  const seen = new Set();
+  let best = [];
+  for (const k0 of set.keys()){
+    if (seen.has(k0)) continue;
+    const comp = [], q = [k0];
+    seen.add(k0);
+    for (let h=0; h<q.length; h++){
+      const cur = set.get(q[h]);
+      comp.push(cur);
+      for (let dx=-1; dx<=1; dx++) for (let dz=-1; dz<=1; dz++){
+        if (!dx && !dz) continue;
+        const nk = key(cur[0]+dx, cur[1]+dz);
+        if (set.has(nk) && !seen.has(nk)){ seen.add(nk); q.push(nk); }
+      }
+    }
+    if (comp.length > best.length) best = comp;
+  }
+  return best;
+}
+
+/* Scanning the lattice costs a raycast per cell on the deck pass, so it is done
+   once — the world is static, only the picking changes between rounds. */
+let _cells = null;
+function cellPools(){
+  if (!_cells) _cells = { ground: standingCells(0),
+                          deck: largestComponent(standingCells(UPPER_DECK_Y)) };
+  return _cells;
+}
+
+/* Mitchell's best-candidate: every pick is the sampled cell furthest from all
+   those already taken, which fills the available floor at any count without
+   needing a target spacing decided up front. Starts from the cell furthest from
+   the player so the garrison builds inward from the far end. */
+function spreadAnchors(cells, n){
+  if (n <= 0 || !cells.length) return [];
+  const pool = cells.slice(), chosen = [];
+  let far = 0, farD = -1;
+  for (let i=0;i<pool.length;i++){
+    const d = Math.hypot(pool[i][0]-SPAWN.x, pool[i][1]-SPAWN.z);
+    if (d > farD){ farD = d; far = i; }
+  }
+  chosen.push(pool.splice(far,1)[0]);
+  while (chosen.length < n && pool.length){
+    let bestI = 0, bestD = -1;
+    const tries = Math.min(32, pool.length);
+    for (let t=0;t<tries;t++){
+      const i = Math.floor(Math.random()*pool.length), c = pool[i];
+      let near = Infinity;
+      for (const ch of chosen){
+        const d = (c[0]-ch[0])**2 + (c[1]-ch[1])**2;
+        if (d < near) near = d;
+      }
+      if (near > bestD){ bestD = near; bestI = i; }
+    }
+    chosen.push(pool.splice(bestI,1)[0]);
+  }
+  return chosen;
+}
+
+/* A loop around one anchor. Legs go through the same snappers the hand-placed
+   waypoints used, so the reachability guarantee is unchanged. A ring whose legs
+   all snap into the same corner would leave the soldier shuffling on the spot,
+   so the widest of a few candidate radii wins. */
+function anchorRoute(cx, cz, floorY, upper, ring){
+  let best = null, bestSpan = -1;
+  const phase = Math.random()*PI*2;
+  const want = Math.min(2.2, ring*0.9);
+  for (const r of [ring, ring*0.7, ring*0.45]){
+    const legs = [];
+    for (let k=0;k<4;k++){
+      const a = phase + (k/4)*PI*2;
+      const wx = clamp(cx + Math.cos(a)*r, -HALF+1.6, HALF-1.6);
+      const wz = clamp(cz + Math.sin(a)*r, -HALF+1.6, HALF-1.6);
+      legs.push(upper ? nearestFree(wx, wz, 0.5, 1.7, 6, floorY)
+                      : nearestReachable(wx, wz, 0.5, 1.7, 10));
+    }
+    let span = 0;
+    for (let i=0;i<legs.length;i++) for (let j=i+1;j<legs.length;j++)
+      span = Math.max(span, Math.hypot(legs[i][0]-legs[j][0], legs[i][1]-legs[j][1]));
+    if (span > bestSpan){ bestSpan = span; best = legs; }
+    if (span >= want) break;
+  }
+  return best;
+}
+
+/* Share of the squad holding the upper deck. Proportional so the sniper floor
+   stays manned at any count, floored at one so it is never simply abandoned. */
+const upperShare = n => clamp(Math.round(n*0.08), 1, 8);
+
+/* Loops must shrink as the yard fills. Each cell of the pool is a square metre,
+   so sqrt(area/count) is the mean spacing between anchors, and a ring much wider
+   than a third of that puts neighbouring patrols on top of each other — which
+   matters because soldiers do not collide with one another, so two men on the
+   same spot read as one man with a doubled silhouette rather than as a crowd. */
+const ringFor = (area, n) => clamp(Math.sqrt(area/Math.max(1,n))*0.38, 1.3, 4.6);
+
+function buildRoutes(n){
+  const { ground, deck } = cellPools();
+  const routes = [];
+  const nUpper = Math.min(upperShare(n), deck.length);
+  const deckRing = ringFor(deck.length, nUpper), groundRing = ringFor(ground.length, n-nUpper);
+  for (const [cx,cz] of spreadAnchors(deck, nUpper))
+    routes.push({ upper:true, legs:anchorRoute(cx, cz, UPPER_DECK_Y, true, deckRing) });
+  for (const [cx,cz] of spreadAnchors(ground, n - routes.length))
+    routes.push({ upper:false, legs:anchorRoute(cx, cz, 0, false, groundRing) });
+  return routes;
+}
 
 const ST = { PATROL:0, ALERT:1, COMBAT:2, DEAD:3 };
 const enemies = [];
@@ -4325,12 +4502,16 @@ let enemyHitMeshes = [];
 
 function spawnEnemies(){
   const _sBox = new THREE.Box3(), _sSz = new THREE.Vector3();
-  for (let i=0;i<10;i++){
+  const routes = buildRoutes(enemyCount);
+  for (let i=0;i<routes.length;i++){
     const parts = buildEnemyModel();
-    /* Ten soldiers at 26 shadow casters each were most of the shadow pass. The
-       torso, head, limbs and pack still cast, so the silhouette on the ground is
-       unmistakably a man; what goes is the pouches-and-knee-pads detail, which
-       at 2048 over a 60m yard was never more than a pixel of noise anyway. */
+    /* A squad at 26 shadow casters each is most of the shadow pass, and at a
+       count of 25 it is roughly three quarters of it. The cut takes each man
+       to 8 casters: the torso capsule, carrier and webbing, the hip and knee
+       cloth, and the rifle. That leaves a silhouette on the ground that is
+       unmistakably an armed man, though at this threshold the helmet and arms
+       fall under it too — what you lose is contour inside the outline, which at
+       2048 over a 60m yard was never more than a pixel of noise anyway. */
     parts.model.traverse(o => {
       if (!o.isMesh || !o.castShadow) return;
       _sBox.setFromObject(o); _sBox.getSize(_sSz);
@@ -4338,32 +4519,33 @@ function spawnEnemies(){
     });
     const obj = new THREE.Group();
     obj.add(parts.model);
-    const tag = makeTag(ENEMY_NAMES[i]);
+    const name = enemyName(i);
+    const tag = makeTag(name);
     obj.add(tag.sprite);
-    const upper = UPPER_ROUTES.has(i);
-    /* Hand-placed waypoints drift into props as the map changes, and a body
-       standing inside a crate can never resolve a legal move — it just stands
-       there for three minutes. Snap every leg to open floor at load. */
-    /* the upper floor is reachable by ramp, which a flat flood fill can't see,
-       so only ground routes get the reachability constraint */
-    const floorY = upper ? 4.42 : 0;
-    const route = upper
-      ? ROUTES[i].map(([wx,wz]) => nearestFree(wx, wz, 0.5, 1.7, 6, floorY))
-      : ROUTES[i].map(([wx,wz]) => nearestReachable(wx, wz, 0.5, 1.7, 10));
-    /* two routes loop straight past the player spawn — start those enemies on
-       the far leg so nobody opens fire before you have your bearings */
-    let wpStart = 0;
+    const upper = routes[i].upper;
+    const floorY = upper ? UPPER_DECK_Y : 0;
+    const route = routes[i].legs;
+    /* Start each man on whichever leg keeps him clearest of the men already
+       placed. Every anchor is already outside SPAWN_CLEARANCE, so the player is
+       covered without weighing distance to the spawn here; what this buys is
+       that two overlapping loops do not both begin at the point where they
+       cross. Soldiers have no mutual collision, so a shared start would render
+       as one doubled silhouette rather than two men. */
+    let wpStart = 0, bestClear = -1;
     for (let k=0;k<route.length;k++){
-      const d = Math.hypot(route[k][0]-SPAWN.x, route[k][1]-SPAWN.z);
-      const dBest = Math.hypot(route[wpStart][0]-SPAWN.x, route[wpStart][1]-SPAWN.z);
-      if (d > dBest) wpStart = k;
+      let clear = Infinity;
+      for (const o of enemies){
+        const d = Math.hypot(route[k][0]-o.obj.position.x, route[k][1]-o.obj.position.z);
+        if (d < clear) clear = d;
+      }
+      if (clear > bestClear){ bestClear = clear; wpStart = k; }
     }
     const start = route[wpStart];
     obj.position.set(start[0], floorY, start[1]);
     scene.add(obj);
 
     const e = {
-      idx:i, name:ENEMY_NAMES[i], obj, tag, upper, route, wp:(wpStart+1)%route.length,
+      idx:i, name, obj, tag, upper, route, wp:(wpStart+1)%route.length,
       p:parts, hp:100, state:ST.PATROL, dead:false,
       yaw: rand(0,7), targetYaw: rand(0,7),
       vel:new THREE.Vector3(),
@@ -4382,6 +4564,10 @@ function spawnEnemies(){
     parts.hbLegs.userData = {enemy:e, part:'legs'};
     enemies.push(e);
   }
+  /* the objective and the win check count against what actually spawned, not
+     what was asked for, so a floor too crowded to place the last man cannot
+     leave the round unwinnable */
+  G.total = enemies.length;
   rebuildHitMeshes();
 }
 function rebuildHitMeshes(){
@@ -4418,9 +4604,12 @@ const player = {
   mantleT:0, mantleDur:0, mantleFrom:new THREE.Vector3(), mantleTo:new THREE.Vector3(),
   dead:false
 };
+const fmtClock = t => Math.floor(t/60) + ':' + String(Math.floor(t%60)).padStart(2,'0');
+/* There is no round limit: the yard is held until the last man is down, or until
+   he puts you down. G.elapsed still runs, but only as the report's stopwatch. */
 const G = {
   running:false, over:false, paused:false, started:false,
-  time:180, kills:0, headshots:0, shots:0, hits:0, elapsed:0,
+  total:0, kills:0, headshots:0, shots:0, hits:0, elapsed:0,
   dmgFlash:0, lowPulse:0, hbTimer:0, killFlash:0,
   grace:GRACE_TIME          // hostiles hold fire while you get your bearings
 };
@@ -4435,7 +4624,8 @@ const UI = {
   hpNum:$('hpNum'), hpFill:$('hpFill'), apNum:$('apNum'), apFill:$('apFill'),
   magNum:$('magNum'), resNum:$('resNum'), wname:$('wname'), wmode:$('wmode'),
   wicon:$('wicon'), reloadHint:$('reloadHint'),
-  timer:$('timer'), killCount:$('killCount'), lowhp:$('lowhp'), edgeGlow:$('edgeGlow'),
+  killCount:$('killCount'), killTotal:$('killTotal'),
+  lowhp:$('lowhp'), edgeGlow:$('edgeGlow'),
   minimap:$('minimap'), mctx:$('minimap').getContext('2d'),
   slots:[...document.querySelectorAll('.slot')],
   cross:$('cross'), scope:$('scope'), retWrap:$('retWrap'), breathTag:$('breathTag'),
@@ -4443,6 +4633,33 @@ const UI = {
   _scopeK:-1, _breathTip:null,
   startScreen:$('startScreen'), endScreen:$('endScreen'), pause:$('pause'), boot:$('boot')
 };
+
+/* Every hostile count in the UI comes through here: the HUD objective and the
+   two briefing strings. Called with the menu setting while choosing, and with
+   what actually spawned once a round is live. */
+function refreshCountUI(n){
+  UI.killTotal.textContent = n;
+  $('slugHostiles').textContent = n;
+  $('hintHostiles').textContent = n;
+}
+refreshCountUI(enemyCount);
+$('sKills').innerHTML = `0<span>/${enemyCount}</span>`;
+
+/* Garrison size selector. The constants are authoritative — the input's bounds
+   are stamped from them rather than duplicated in the markup. The value takes
+   effect at the next spawn, which covers both PRESS TO START and REDEPLOY since
+   both run through resetWorldState. */
+const countRange = $('countRange'), countVal = $('countVal'), settingEl = $('setting');
+countRange.min = ENEMY_MIN; countRange.max = ENEMY_MAX; countRange.value = ENEMY_DEFAULT;
+countRange.addEventListener('input', () => {
+  enemyCount = clamp(parseInt(countRange.value,10) || ENEMY_DEFAULT, ENEMY_MIN, ENEMY_MAX);
+  countVal.textContent = enemyCount;
+  refreshCountUI(enemyCount);
+});
+/* the whole start screen is one big click target, so this strip has to swallow
+   its own events or dragging the slider would drop you straight into the round */
+for (const ev of ['click','pointerdown','mousedown'])
+  settingEl.addEventListener(ev, e => e.stopPropagation());
 
 function updateVitalsUI(){
   UI.hpNum.textContent = Math.max(0,Math.round(player.hp));
@@ -4798,7 +5015,12 @@ function requestLock(){
     UI.pause.classList.add('on');
   }, 350);
 }
-UI.startScreen.addEventListener('click', ()=>{ SFX.init(); startGame(); });
+/* the contains() guard catches a slider drag that happens to release outside the
+   strip, which retargets the click and would otherwise start the round */
+UI.startScreen.addEventListener('click', e=>{
+  if (settingEl.contains(e.target)) return;
+  SFX.init(); startGame();
+});
 UI.pause.addEventListener('click', ()=>{ SFX.init(); requestLock(); });
 $('restartBtn').addEventListener('click', e=>{ e.stopPropagation(); restart(); });
 
@@ -5050,11 +5272,15 @@ function killEnemy(e, head, dir){
   UI.edgeGlow.style.opacity = '0.9';
   setTimeout(()=>UI.edgeGlow.style.opacity='0', 130);
   /* a man going down is louder than the shot that did it, and the squad's
-     reach grows as it shrinks — the survivors come to you */
-  alertSquad(30 + G.kills*7, 5,
+     reach grows as it shrinks — the survivors come to you. Scaled by the
+     fraction of the squad down rather than the raw count: at 7m per kill the
+     radius passed the yard's 85m diagonal on the last man of ten, but would
+     have done it by the tenth of twenty-five, turning the whole back half of
+     the round into one standing manhunt. */
+  alertSquad(30 + (G.kills/G.total)*70, 5,
              ex => pick([e.name+' IS DOWN — '+bearingWord(ex), 'MAN DOWN, CONVERGE',
                          'WE LOST '+e.name+', PUSH IN']), 0.85);
-  if (G.kills>=10) endGame(true);
+  if (G.kills>=G.total) endGame(true);
 }
 
 /* viewmodel recoil impulse */
@@ -5725,7 +5951,9 @@ function updateEnemy(e, dt){
    ========================================================================= */
 const WALK_SPEED=4.9, SPRINT_SPEED=7.9, CROUCH_SPEED=2.35;
 const ACCEL=64, AIR_ACCEL=11, FRICTION=11.5, GRAVITY=-19.5, JUMP_V=6.95;
-const DOUBLE_JUMP_V=6.05;         // second hop, slightly weaker than the first
+/* air hops available after the ground jump; each one weaker than the last, so
+   the third is a nudge for line-of-sight rather than a way to leave the yard */
+const AIR_JUMPS=2, AIR_JUMP_V=[6.05, 5.30];
 const BREATH_TIME=3.0;            // seconds of steady hold per breath
 /* a ledge this far above the feet can still be pulled up onto */
 const MANTLE_RISE=1.95, MANTLE_MIN=0.45;
@@ -5866,29 +6094,30 @@ function updatePlayer(dt){
     if (sp>maxSpeed){ const k=maxSpeed/sp; player.vel.x*=k; player.vel.z*=k; }
   }
 
-  /* ---- jump / double jump / mantle ---- */
+  /* ---- jump / air hops / mantle ---- */
   const spacePressed = player.spaceEdge; player.spaceEdge = false;
-  if (player.onGround) player.jumpsLeft = 1;               // the air hop
+  if (player.onGround) player.jumpsLeft = AIR_JUMPS;       // the air hops
   let jumpedNow = false;
   if (keys['Space'] && player.onGround && !player.crouch){
     player.vel.y = JUMP_V;
     player.onGround = false;
-    player.jumpsLeft = 1;
+    player.jumpsLeft = AIR_JUMPS;
     jumpedNow = true;
     SFX.jumpSound();
   }
   if (!jumpedNow && !player.onGround && player.mantleT<=0){
     /* holding space into a ledge climbs it; a fresh tap does too, so the
-       double jump is only spent when there's nothing to grab */
+       air hop is only spent when there's nothing to grab */
     if (keys['Space'] && player.vel.y < 2.6){
       const led = findMantle();
       if (led) startMantle(led);
     }
     if (player.mantleT<=0 && spacePressed && player.jumpsLeft>0){
+      const hop = AIR_JUMPS - player.jumpsLeft;   // 0 on the first air hop
       player.jumpsLeft--;
-      player.vel.y = DOUBLE_JUMP_V;
+      player.vel.y = AIR_JUMP_V[hop];
       SFX.jumpSound();
-      player.shake = Math.min(1.2, player.shake + 0.10);
+      player.shake = Math.min(1.2, player.shake + 0.10 + hop*0.04);
     }
   }
   player.vel.y += GRAVITY*dt;
@@ -5908,7 +6137,7 @@ function updatePlayer(dt){
     player.mantleTilt = Math.sin(k*PI)*0.085;
     if (k>=1){
       player.mantleT = 0; player.mantleTilt = 0;
-      player.onGround = true; player.jumpsLeft = 1;
+      player.onGround = true; player.jumpsLeft = AIR_JUMPS;
       SFX.footstep(0.7, 0);
     } else player.onGround = false;
   } else {
@@ -6292,7 +6521,7 @@ function resetWorldState(){
   player.shake=0; player.landShake=0; player.crouch=false; player.height=STAND_H; player.eye=STAND_H;
   player.ads=false; player.adsK=0; player.adsEase=0; player.swayAmp=1;
   player.breath=0; player.breathHeld=false; player.breathLock=false;
-  player.mantleT=0; player.mantleTilt=0; player.jumpsLeft=1; player.spaceEdge=false;
+  player.mantleT=0; player.mantleTilt=0; player.jumpsLeft=AIR_JUMPS; player.spaceEdge=false;
   sensScale=1; fovCur=BASE_FOV; vmRoot.visible=true;
   vmCamera.position.z=0; vmCamera.fov=VM_FOV; vmCamera.updateProjectionMatrix();
   UI._scopeK=-1; UI.scope.style.opacity=0; compMat.uniforms.scope.value=0; UI.cross.classList.remove('hidden');
@@ -6300,10 +6529,21 @@ function resetWorldState(){
   UI.breathTag.classList.remove('on'); UI._breathTip=null;
   WEAPONS[0].vm.group.visible=true;
 
+  /* Every soldier owns its geometry outright — the primitive helpers build fresh
+     buffers per call and collapseRig clones them again before merging — and the
+     renderer only frees a VBO on the geometry's own dispose event, so dropping
+     the reference is not enough. Left to the collector this orphans a full set
+     per soldier on every redeploy, and it accumulates for the whole session.
+     Materials and textures are the other way round: E_MAT and INVIS are shared
+     by all of them and must not be touched. The tag's canvas texture and sprite
+     material are the only per-soldier ones. */
+  const dropGeo = o => { if (o.isMesh && o.geometry) o.geometry.dispose(); };
   for (const e of enemies){
     scene.remove(e.obj);
-    if (e.gunDropped) scene.remove(e.p.gun);   // reparented on death
+    if (e.gunDropped){ scene.remove(e.p.gun); e.p.gun.traverse(dropGeo); }  // reparented on death
+    e.obj.traverse(dropGeo);
     e.tag.tex.dispose();
+    e.tag.sprite.material.dispose();
   }
   enemies.length = 0;
   spawnEnemies();
@@ -6317,11 +6557,12 @@ function resetWorldState(){
   }
   UI.feed.innerHTML='';
 
-  G.time=180; G.kills=0; G.headshots=0; G.shots=0; G.hits=0; G.elapsed=0;
+  G.kills=0; G.headshots=0; G.shots=0; G.hits=0; G.elapsed=0;
   G.over=false; G.dmgFlash=0; G.lowPulse=0; G.hbTimer=0; G.killFlash=0;
   G.grace=GRACE_TIME;
   _sweepAt=0; _noiseCd=0;
   UI.killCount.textContent='0';
+  refreshCountUI(G.total);          // what actually spawned, not what was asked for
   updateVitalsUI(); updateAmmoUI();
 }
 function startGame(){
@@ -6351,14 +6592,14 @@ function endGame(win){
   const es = UI.endScreen;
   es.classList.remove('hide','win','lose');
   es.classList.add(win?'win':'lose');
-  $('endTitle').textContent = win ? 'SECTOR CLEARED' : (player.dead?'KILLED IN ACTION':'TIME EXPIRED');
+  $('endTitle').textContent = win ? 'SECTOR CLEARED' : 'KILLED IN ACTION';
   $('endTag').textContent = win ? 'MISSION REPORT // SUCCESS' : 'MISSION REPORT // FAILURE';
-  $('sKills').innerHTML = G.kills + '<span>/10</span>';
+  $('sKills').innerHTML = G.kills + `<span>/${G.total}</span>`;
   $('sHeads').textContent = G.headshots;
   const acc = G.shots>0 ? Math.round(G.hits/G.shots*100) : 0;
   $('sAcc').innerHTML = acc + '<span>%</span>';
   const secs = Math.floor(G.elapsed);
-  $('sTime').textContent = Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0');
+  $('sTime').textContent = fmtClock(secs);
   SFX.alarm(win);
 }
 
@@ -6387,7 +6628,7 @@ allocTargets.onResize();
    21. MAIN LOOP
    ========================================================================= */
 let last = perfNow;
-let mapAccum = 0, hudAccum = 0;
+let mapAccum = 0;
 
 /* Half the static scene is trim — rail teeth, bolts, cones, small debris — and
    every one of them was being re-rendered into the 2048 shadow map for a smudge
@@ -6421,12 +6662,10 @@ function frame(now){
 
   if (G.running && !G.over){
     G.elapsed += dt;
-    G.time -= dt;
     if (G.grace > 0) G.grace -= dt;
     updatePlayer(dt);
     updateCombatDirector();
     for (const e of enemies) updateEnemy(e, dt);
-    if (G.time<=0){ G.time=0; endGame(false); }
   } else {
     mouseDX = mouseDY = 0;
     /* menu camera: a slow crane through the yard rather than a map overview,
@@ -6460,16 +6699,6 @@ function frame(now){
   updateCrosshair(dt);
   updateDmgArcs(dt);
 
-  /* HUD throttled */
-  hudAccum += dt;
-  if (hudAccum > 0.1){
-    hudAccum = 0;
-    if (G.running){
-      const t = Math.max(0,G.time);
-      UI.timer.textContent = Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
-      UI.timer.classList.toggle('warn', t<30);
-    }
-  }
   mapAccum += dt;
   if (mapAccum > 0.055){ mapAccum = 0; if (G.started) drawMinimap(); }
 
