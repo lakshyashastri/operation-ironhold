@@ -5643,6 +5643,13 @@ addEventListener('keydown', e=>{
   }
 });
 addEventListener('keyup', e=>{ keys[e.code]=false; });
+/* A window that loses focus never delivers the keyup for anything held at the
+   time, so every such key stays latched until it is pressed and released again.
+   That was always true and always slightly wrong — a stale W walked you into a
+   wall on return — but removing the duration cap on apparition made it sharp:
+   a held Q survived the alt-tab, re-armed itself on the way back, and launched
+   a flight nobody had asked for that only a fresh press and release could end. */
+addEventListener('blur', ()=>{ for (const k in keys) keys[k] = false; });
 addEventListener('mousemove', e=>{
   if (document.pointerLockElement !== document.body) return;
   mouseDX += e.movementX || 0;
