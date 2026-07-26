@@ -7,8 +7,8 @@ no package manager, and not a single image, audio or model file on disk.
 > — MIT, © StarKnightt. The original game and the five prompts that produced it are entirely
 > upstream's work. This fork doubles the size of the map, adds a configurable garrison size,
 > removes the round timer, generates patrol routes instead of hand-placing them, adds a third
-> air jump, carries more reserve ammunition, lets more of the squad shoot at once, and adds a
-> second playable character who does not use guns.
+> air jump, carries more reserve ammunition, and adds a second playable character who does not
+> use guns.
 
 **[Play the original here](https://starknightt.github.io/operation-ironhold/)**
 
@@ -100,17 +100,17 @@ director caps how many may shoot at any one moment. The rest keep manoeuvring. T
 constraint is what keeps a firefight readable instead of collapsing into crossfire you
 cannot answer.
 
-That cap used to be a flat two, which was calibrated against a ten-man garrison and stayed
-two when the setting grew to a hundred — past about twenty hostiles the cap, not the squad,
-was the difficulty, and a yard holding fifty men played no differently from one holding
-twelve. It now rises with the garrison you chose: three at ten hostiles up to six at a
-hundred for the Operator, and seven up to ten for the Dark Lord, who can afford it. Standing
-in the open against a full hundred now costs about 21 damage per second instead of 11.
+For the Operator that cap is two, exactly as the game shipped. It was briefly raised for
+both characters and that was a mistake: it measurably changed the original game, roughly
+doubling incoming damage against a large garrison, which is not something a second campaign
+should do to the first. The Dark Lord scales instead — seven at ten hostiles up to ten at a
+hundred — because with 250 health, a shield and regeneration, two shooters leave him not
+merely safe but unaware anything is happening.
 
 Dying ends the round. The report screen shows eliminations, headshots, accuracy and time
 survived — the stopwatch still runs, it just is not a limit any more. The Dark Lord's report
-counts spells cast and kills by curse instead of headshots and accuracy, because a curse does
-not miss and the number would always read 100%.
+counts spells cast and kills by Unforgivable Curse instead of headshots and accuracy, because
+a curse does not miss and the accuracy number would always read 100%.
 
 ## Weapons
 
@@ -170,11 +170,11 @@ not kill him at all.
 
 | Key | Spell | What it does |
 | --- | --- | --- |
-| `1` | Avada Kedavra | Half-second wind-up, then a green beam that kills whatever it touches. No falloff, no headshot multiplier, no armour — none of it applies. Brings the entire yard down on you. |
+| `1` | Avada Kedavra | A green beam that kills whatever it touches. No falloff, no headshot multiplier, no armour — none of it applies. Brings the entire yard down on you. |
 | `2` | Bombarda Maxima | A blast at the aim point: falloff damage in a 6.5m radius, and everyone inside it gets thrown. The containers do not move; the static world is merged and instanced, so there is nothing there to break. |
 | `3` | Crucio | Held, not tapped. He drops his rifle, goes down and screams — and the screaming carries, on the same propagation the gunfire alert uses. Holding a man under it is how you call the rest of the yard to a spot of your choosing. |
 | `4` | Sectumsempra | Seven hitscan samples fanned across the crosshair. Heavy damage plus a bleed that keeps running. Catches two men standing near each other. |
-| `Q` | Apparition | Tap for an instant hop up to 26m to wherever you are looking. Hold and you become a low black streak at 30 m/s for 0.8s, steerable with the mouse. |
+| `Q` | Apparition | Tap for an instant hop up to 26m. Hold and you become a low black streak, steerable with the mouse, for as long as you keep holding — and the yard slows to a third of speed around you while you do. |
 | `E` | Expelliarmus | Takes the rifle off him and throws it. He is then unarmed, and reacts accordingly. |
 | `F` | Levicorpus | Hoists him 2.5m into the air, upside down, swinging, for five seconds — then drops him, which hurts. |
 | `C` | Petrificus Totalus | Six seconds rigid. Cheapest thing on the list and one of the most useful. |
@@ -203,16 +203,47 @@ jump. Verified at zero bad landings — outside the fence, inside a prop, sunk i
 still stuck after a full second of settling physics — across 2,500 blinks, 400 smoke flights and
 300 Horcrux relocations, with 15% of blinks landing above ground level and the highest at 8.2m.
 
+**Nothing winds up.** Every spell casts on the frame you press the button; the cooldown is
+the whole cost. Avada Kedavra originally demanded half a second on the button before it would
+fire, on the theory that the signature curse should feel deliberate. In the hand it just felt
+like the spell was arguing with you.
+
+**Apparition dilates the yard, not you.** Holding `Q` slows the world — the squad, their
+tracers, their brass, the dust — to 34% while you keep real time. That split is why the speed
+could come down from 30 m/s to 15 and still feel fast: relative to the men you are passing you
+are moving faster than before, while the input under your hand stays responsive. There is no
+duration limit; you rematerialise when you let go. Your own cooldowns and regeneration run on
+the yard's dilated clock rather than yours, because otherwise holding the key would have been
+a free full heal and a free cooldown reset for the price of one finger — twenty seconds of
+flight healed 180 health before that was fixed, and heals 1.6 now.
+
 **Flight is a glide, not free ascent.** Once the air hops are spent, holding `Space` cuts gravity
 to a sixth and floors the sink rate at 1.7 m/s, with enough air control to steer. You gain height
 with the three jumps and reposition with apparition; twenty seconds of held throttle tops out at
 7.5m and cannot leave the yard, so no second altitude clamp was needed.
 
-**The mood is uniforms only.** No geometry moved. The light rig comes down — sun to 52%, sky fill
-and bounce to 60% — the haze thickens by a third, and the composite shader gains a grade that
-pulls 40% of the colour out, runs the shadows cold and takes the exposure down. Because the post
-pass grades the sky along with everything else, the fog stays the sky's own colour and there is
-no seam at the horizon.
+**The mood is uniforms only, and it was tuned against a histogram.** No geometry moved. The
+light rig comes down, the haze thickens, and the composite shader gains its own tone curve.
+
+Getting that curve right took three attempts and the first two are worth recording. Attempt one
+multiplied the whole frame down, which is the wrong operation: an overcast sky is emissive and
+already sits near the top of the range, so a flat multiply took the yard — the darker half of
+the image — to black while the sky kept its exposure. The result read as a skyline over a pit.
+Attempt two overcorrected into something brighter than the operator's daylight, which was
+readable and had no atmosphere at all.
+
+What settled it was measurement rather than taste: render twelve fixed stances through the real
+composite pass, histogram the bottom 62% of each frame — the part you have to walk through —
+separately from the sky, and search the parameter space for the *darkest* setting that keeps the
+walkable frame legible. The curve that won compresses highlights hard and shadows barely, which
+pulls the sky down toward the ground, then lifts the black point only where the image is already
+dark, so a fully shadowed interior does not turn milky.
+
+Measured against the operator's daylight: mean ground luminance 0.20 against 0.26, so the yard
+is a fifth darker; but 2.5% of the walkable frame falls below legibility against the operator's
+18%, and on the worst stance 4.6% against 41%. The lesson is that the chosen light rig is
+*dimmer* than the one that produced the unreadable frame. Darkness was never the problem — a
+flat multiply and a contrast stretch that clipped everything below 5% to zero was.
 
 **The incantation.** There is no voice actor and no audio files, so the whisper under every cast
 is built the way the guns are: three sibilant noise bursts on a falling bandpass with the Q wound

@@ -576,6 +576,44 @@ const DIAG = HALF*2*Math.SQRT2;
 const MODE = { SOLDIER:0, DARKLORD:1 };
 let gameMode = MODE.SOLDIER;
 const isDark = () => gameMode === MODE.DARKLORD;
+/* The dark campaign's tone curve, and the scale factors on the light rig.
+ *
+ * These were not chosen by eye. The first attempt multiplied the whole frame
+ * down, which took the yard to black while the overcast sky — emissive, and
+ * already near the top of the range — kept its exposure; the frame read as a
+ * skyline over a pit. The second overcorrected and came out brighter than the
+ * operator's daylight. Both were caught by rendering twelve fixed stances,
+ * histogramming the composited result, and measuring the bottom 62% of the
+ * frame — the part you have to walk through — separately from the sky.
+ *
+ * `knee` compresses highlights (the sky) far more than shadows, which is what
+ * closes the gap between the two. `gain` sets the overall level and `lift`
+ * raises the floor so shadowed concrete keeps its texture instead of clipping
+ * to nothing.
+ *
+ * Searched rather than guessed: twenty-seven combinations of light rig and
+ * curve, twelve stances each, rendered through the real composite pass and
+ * histogrammed. The objective was lexicographic rather than scored — among the
+ * settings that keep the walkable frame legible, take the DARKEST — because an
+ * earlier scored search traded away all of the mood for readability nobody had
+ * asked for and produced something that looked like an overcast afternoon.
+ *
+ * Against the operator's daylight, measured: mean ground luminance 0.200 versus
+ * 0.256, so the yard is a fifth darker and unmistakably the other mode. But the
+ * 5th percentile is 0.092 against 0.043, and only 2.8% of the walkable frame
+ * falls below legibility against the operator's 18.2% — on the worst of the
+ * twelve stances, 4.9% against 41%. The sky sits at 1.67x the ground instead of
+ * 1.92x, and it was that gap, not the overall level, that made the yard read as
+ * a pit under a skyline.
+ *
+ * The lesson worth keeping: the light rig here is dimmer than the one that
+ * produced the unreadable frame. Darkness was never the problem. The problem
+ * was a flat multiply and a contrast stretch that clipped everything below
+ * about 5% straight to zero. A dim scene under a curve that protects its
+ * shadows beats a bright scene under a curve that eats them.
+ */
+const DARK_GRADE = { knee:0.62, gain:0.80, lift:0.030 };
+const DARK_LIGHT = { hemi:0.44, sun:0.34, bounce:0.50, sky:0.62, fog:1.12, vig:1.04 };
 /** framerate independent exponential smoothing */
 const damp  = (cur,tgt,lambda,dt)=> lerp(cur,tgt,1-Math.exp(-lambda*dt));
 const easeOutCubic  = t => 1-Math.pow(1-t,3);
@@ -903,13 +941,6 @@ const SFX = (function(){
     tone({type:'sawtooth', f0:rand(96,132), f1:rand(58,74), dur:L*0.8,
           gain:g*0.30, lp:520, verb:0.24});
   }
-  /* wind-up: a tone climbing under a tightening hiss, so releasing early feels
-     like interrupting something rather than like a misfire */
-  function castCharge(k){
-    if(!ready) return;
-    tone({type:'triangle', f0:lerp(150,470,k), dur:0.13, gain:0.055, lp:2200});
-    noise({type:'bandpass', freq:lerp(1800,4600,k), q:9, gain:0.045, dur:0.12});
-  }
   function killingCurse(){
     parseltongue(0.20, 0.30);
     /* the discharge: a hard transient, a descending saw for the beam, and a
@@ -1006,7 +1037,7 @@ const SFX = (function(){
   return { init, gunshot, radio, dryFire, magOut, magIn, boltClick, pumpSound, boltCycle, shellDrop, footstep,
            jumpSound, landSound, impactWall, impactFlesh, hitBeep, killChime, enemyDeath,
            heartbeat, damageTaken, alarm, suspend, resume,
-           parseltongue, castCharge, killingCurse, bombarda, crucioLoop, scream, sectum,
+           parseltongue, killingCurse, bombarda, crucioLoop, scream, sectum,
            disarm, petrify, levitate, apparate, flightWind, protegoUp, protegoHit,
            revealPing, revelio, horcrux };
 })();
@@ -1198,6 +1229,9 @@ const compMat = postMat(`
   uniform sampler2D tScene, tBloom;
   uniform vec2  res;
   uniform float time, bloom, vig, dmg, low, ab, flash, scope, dark, veil;
+  /* the dark grade's three tuning constants, as uniforms so the curve can be
+     measured and retuned against a luminance histogram without a shader edit */
+  uniform float dkKnee, dkGain, dkLift;
   varying vec2 vUv;
   vec3 aces(vec3 x){
     const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
@@ -1256,17 +1290,37 @@ const compMat = postMat(`
     float edge = smoothstep(0.05, 0.30, r2);
     col = mix(col, mix(col, vec3(0.42,0.0,0.0), 0.8), low*edge);
 
-    /* Dark lord grade. The brief was that the map does not change, so this and
-       the light rig are the whole of it: the same yard with the colour pulled
-       out of it, the shadows run cold and the exposure taken down. Applied
-       after the film curve so it reads as a different stock rather than as a
-       tint laid over the operator image. */
+    /* Dark lord grade. The map does not change, so this and the light rig are
+       the whole of it: the same yard with the colour pulled out of it and the
+       shadows run cold.
+
+       The first version simply multiplied the whole frame down, and that is the
+       wrong operation. An overcast sky is emissive and sat near the top of the
+       range, so a flat multiply took the yard — already the darker half of the
+       image — to black while the sky stayed legible, and the result was a
+       silhouette of a skyline over a pit you could not read at all.
+
+       What this does instead is narrow the distance between the two ends. The
+       reciprocal term compresses the top hard and the bottom barely, which pulls
+       the sky down; the lift afterwards raises the floor off zero so shadowed
+       concrete keeps its texture. Midtones come out roughly where they went in,
+       so the yard is dim and cold without being unreadable. */
     if (dark > 0.001){
       float dlum = dot(col, vec3(0.2126,0.7152,0.0722));
-      vec3 dcol = mix(vec3(dlum), col, 0.60);
-      dcol *= vec3(0.855, 0.935, 1.075);
-      dcol = (dcol - 0.5) * 1.12 + 0.5;
-      dcol *= 0.80;
+      vec3 dcol = mix(vec3(dlum), col, 0.64);
+      dcol *= vec3(0.88, 0.945, 1.075);
+      dcol = dcol / (1.0 + dcol * dkKnee);    // roll the highlights off
+      dcol *= dkGain;                          // set the level
+      /* Lift the floor, but ONLY the floor. A constant add was the obvious way
+         to keep shadows off zero and the wrong one: under the warehouse deck,
+         where every pixel in frame sits inside the lifted band, it raised the
+         whole image uniformly and the interior came out flat milky grey. Keying
+         it to luminance means deep shadow keeps its detail while anything
+         already legible is left alone, so the frame stays dark. */
+      float dl = dot(dcol, vec3(0.2126,0.7152,0.0722));
+      /* tinted, not neutral: a flat scalar added to the darkest pixels strips
+         the cold cast out of precisely the shadows the grade exists to colour */
+      dcol += dkLift * vec3(0.84, 0.95, 1.14) * (1.0 - smoothstep(0.0, 0.20, dl));
       col = mix(col, dcol, dark);
     }
 
@@ -1282,12 +1336,21 @@ const compMat = postMat(`
       col = mix(col, vec3(0.013,0.011,0.017)*(0.65+sm*0.7), clamp(m,0.0,1.0));
     }
 
-    col += (hash(uv*res + fract(time)*vec2(37.0,17.0)) - 0.5) * 0.030;
+    /* Grain, attenuated where the image is dark. The gamma encode expands the
+       bottom of the range hard and the dark grade parks most of the frame down
+       there, so a fixed amplitude that is invisible in daylight boils in shadow. */
+    float grainAmt = 0.030;
+    if (dark > 0.001){
+      float gl = dot(col, vec3(0.2126,0.7152,0.0722));
+      grainAmt *= mix(0.42, 1.0, smoothstep(0.02, 0.22, gl));
+    }
+    col += (hash(uv*res + fract(time)*vec2(37.0,17.0)) - 0.5) * grainAmt;
     gl_FragColor = vec4(pow(max(col,0.0), vec3(0.4545)), 1.0);
   }`, {
     tScene:{value:null}, tBloom:{value:null}, res:{value:new THREE.Vector2()},
     time:{value:0}, bloom:{value:0.60}, vig:{value:1.0}, dmg:{value:0}, low:{value:0},
-    ab:{value:0.5}, flash:{value:0}, scope:{value:0}, dark:{value:0}, veil:{value:0}
+    ab:{value:0.5}, flash:{value:0}, scope:{value:0}, dark:{value:0}, veil:{value:0},
+    dkKnee:{value:DARK_GRADE.knee}, dkGain:{value:DARK_GRADE.gain}, dkLift:{value:DARK_GRADE.lift}
   });
 
 /* =========================================================================
@@ -5621,7 +5684,13 @@ document.addEventListener('pointerlockchange', ()=>{
     /* Q is edge-detected across frames, so a pause taken with it held left
        qDown latched — the first frame after resuming read it as a release and
        handed out a free 26m blink */
+    /* Every raw key too, not just the latch. Clearing qDown while keys.KeyQ
+       stayed true meant the first frame after resuming read a fresh hold that
+       nobody had pressed, and launched a flight the player could not end until
+       they pressed and released Q themselves. */
+    for (const k in keys) keys[k] = false;
     SP.qDown=false; SP.qHeld=0; SP.qFired=false;
+    if (SP.smokeFlight > 0) endSmokeFlight();
     SP.protego=false; player.triggerHeld=false;
     player.ads=false; player.adsK=0; player.adsEase=0;
     UI._scopeK=-1; UI.scope.style.opacity=0; compMat.uniforms.scope.value=0;
@@ -6179,21 +6248,22 @@ const _wpDir = new THREE.Vector3();
 const _tmpAim = new THREE.Vector3();
 /* How many of the men who can see you are cleared to shoot at once.
  *
- * A flat 2 was calibrated against a ten-man garrison, and it stayed 2 when the
- * setting grew to a hundred: past about twenty hostiles the cap, not the squad,
- * was the difficulty, and walking into a yard holding fifty men felt no
- * different from one holding twelve. It now rises with the garrison you chose,
- * so the slider means something across its whole range.
+ * The operator keeps the flat 2 the game was balanced around. It is what stops a
+ * firefight collapsing into crossfire you cannot answer, and raising it for him
+ * measurably changed the original game — incoming damage roughly doubled at a
+ * hundred hostiles — which is not a thing a second campaign should do.
  *
- * Dark lord runs higher still. He has 250hp, a shield and out-of-combat regen,
- * so the operator's ceiling leaves him effectively untouchable; the extra
- * shooters are there to make the yard sound and look like it is fighting back.
+ * The dark lord scales instead, from 7 up to 10 with the size of the garrison.
+ * He carries 250hp, a shield and out-of-combat regeneration, so two shooters
+ * leave him not merely safe but unaware anything is happening; the extra guns
+ * are what make the yard sound and look like it is fighting back.
  */
-const SHOOTERS_LO = 3, SHOOTERS_HI = 6, SHOOTERS_DARK_BONUS = 4;
+const MAX_SHOOTERS = 2;
+const SHOOTERS_DARK_LO = 7, SHOOTERS_DARK_HI = 10;
 function maxShooters(){
+  if (!isDark()) return MAX_SHOOTERS;
   const t = clamp((G.total - ENEMY_MIN) / Math.max(1, ENEMY_MAX - ENEMY_MIN), 0, 1);
-  const cap = Math.round(lerp(SHOOTERS_LO, SHOOTERS_HI, t));
-  return isDark() ? cap + SHOOTERS_DARK_BONUS : cap;
+  return Math.round(lerp(SHOOTERS_DARK_LO, SHOOTERS_DARK_HI, t));
 }
 let _sweepAt = 0;
 /* compass bearing of an enemy relative to the player, for callouts */
@@ -6886,13 +6956,13 @@ function fxBleedDrip(e){
    --------------------------------------------------------------------------- */
 const PRIMARIES = [
   { id:'ak', key:'1', name:'AVADA KEDAVRA', tag:'UNFORGIVABLE', hex:0x4ade5e,
-    cd:1.5, charge:0.5, range:HALF*2.6, noise:DIAG*2.4, cast:castKillingCurse },
+    cd:1.5, range:HALF*2.6, noise:DIAG*2.4, cast:castKillingCurse },
   { id:'bombarda', key:'2', name:'BOMBARDA MAXIMA', tag:'BLASTING CURSE', hex:0xff9a3c,
-    cd:2.5, charge:0.18, range:HALF*2.2, noise:DIAG*1.5, cast:castBombarda },
+    cd:2.5, range:HALF*2.2, noise:DIAG*1.5, cast:castBombarda },
   { id:'crucio', key:'3', name:'CRUCIO', tag:'UNFORGIVABLE — HOLD', hex:0xc23bd6,
-    cd:0, charge:0, range:HALF*1.5, noise:0, hold:true, cast:castCrucio },
+    cd:0, range:HALF*1.5, noise:0, hold:true, cast:castCrucio },
   { id:'sectum', key:'4', name:'SECTUMSEMPRA', tag:'DARK ARTS', hex:0xe8f0ff,
-    cd:0.8, charge:0, range:HALF*1.4, noise:DIAG*0.5, cast:castSectumsempra }
+    cd:0.8, range:HALF*1.4, noise:DIAG*0.5, cast:castSectumsempra }
 ];
 const ABILITIES = [
   { id:'apparate', key:'Q', code:'KeyQ', name:'APPARATE', hex:0x8a6ad6, cd:1.2 },
@@ -6912,14 +6982,14 @@ const SP = {
   cd:[0,0,0,0],                // per-primary cooldown remaining
   acd:Object.create(null),     // per-ability cooldown remaining, by id
   acdMax:Object.create(null),  // and the span it was set from, for the HUD wipe
-  charge:0, charging:false,    // wind-up progress on the selected primary
-  chargeSnd:0, emberFlash:0,
+  emberFlash:0,
   protego:false, protegoK:0, protegoFlash:0,
-  qDown:false,
+  qDown:false, trailT:0,
   crucioOn:null, crucioT:0,    // the man currently being tortured, and audio cadence
   appear:0, appearDur:0,       // apparition dissolve/reform animation
   veil:0,                      // post-process smoke, driven by the above
   flying:false, flyT:0, flyWind:0,
+  timeScale:1,                 // the yard's clock; 1 unless apparating
   smokeFlight:0, smokeDir:new THREE.Vector3(),
   qHeld:0, qFired:false,       // tap-versus-hold discrimination on the apparate key
   horcrux:true, reforming:0,
@@ -7491,7 +7561,17 @@ function stepTortured(e, dt){
    That guarantee is why blink was built first — smoke-flight is the same landing
    code with a longer, steerable approach.
    --------------------------------------------------------------------------- */
-const APPARATE_RANGE = 26, SMOKE_SPEED = 30, SMOKE_MAX_T = 0.8;
+const APPARATE_RANGE = 26;
+/* Half the old 30 m/s. At thirty you crossed the yard in under three seconds and
+   spent all of them correcting an overshoot; the point of travelling as smoke is
+   to pick where you come out, which needs time to aim. */
+const SMOKE_SPEED = 15;
+/* And the yard runs at a third of speed while you are in it. You do not — the
+   player keeps real time, so steering stays responsive while everything you are
+   flying past slows down. This is the whole reason the lower speed reads as
+   controlled rather than sluggish: relative to the men in it you are still
+   moving faster than before. */
+const APPARATE_TIMESCALE = 0.34;
 
 /**
  * Snap an intended destination to somewhere the player can legally stand.
@@ -7603,18 +7683,20 @@ function startApparate(){
 function startSmokeFlight(){
   cancelMantle();
   camera.getWorldDirection(_dlA);
-  SP.smokeFlight = SMOKE_MAX_T;
+  /* seconds elapsed, not seconds remaining: there is no limit, so this only
+     exists so that `> 0` means "currently smoke" */
+  SP.smokeFlight = 1e-4;
   SP.smokeDir.copy(_dlA);
-  SP.veil = Math.max(SP.veil, 0.55);
+  SP.veil = Math.max(SP.veil, 0.34);
   fxSmoke(player.pos.x, player.pos.y, player.pos.z, 22, 0.45, 1.6);
   SFX.apparate(true);
   player.vel.set(0,0,0);
 }
-/** In flight as smoke: collision is off, so this integrates by hand and lands
- *  through the same snap the blink uses. Steerable, because a fixed heading for
- *  0.8s at 30 m/s is a cannon rather than a manoeuvre. */
+/** In flight as smoke: collision is off, so this integrates by hand. It runs for
+ *  exactly as long as the key is held — there is no duration cap — and lands
+ *  through the same snap the blink uses when you let go. */
 function stepSmokeFlight(dt){
-  SP.smokeFlight -= dt;
+  SP.smokeFlight += dt;                 // elapsed, for anything that wants it
   camera.getWorldDirection(_dlA);
   /* turn toward where you are looking rather than snapping to it */
   SP.smokeDir.lerp(_dlA, clamp(dt*5.5, 0, 1)).normalize();
@@ -7632,28 +7714,48 @@ function stepSmokeFlight(dt){
   /* no feet on anything: this suppresses footsteps, head bob, the mantle probe
      and the landing impact for the duration */
   player.onGround = false;
-  SP.veil = 0.55 + Math.sin(perfNow*0.02)*0.08;
+  /* Light. This used to sit at 0.55 and, on top of a grade that was already
+     crushing the yard, meant flying somewhere you could not see. */
+  SP.veil = 0.30 + Math.sin(perfNow*0.02)*0.05;
   /* on a cadence, not per frame — the hover path throttles the identical sound
      to 0.30s and this one was firing it sixty times a second */
   SP.flyWind -= dt;
-  if (SP.flyWind <= 0){ SP.flyWind = 0.12; SFX.flightWind(1); }
-  fxSmoke(player.pos.x, player.pos.y+0.6, player.pos.z, 2, 0.35, 0.7, 0.24);
-  if (SP.smokeFlight <= 0){
-    SP.smokeFlight = 0;
-    const dest = safeLanding(player.pos.x, player.pos.z, player.pos.y);
-    player.pos.set(dest.x, dest.y, dest.z);
-    /* the one case the snap cannot cover is being wedged at the instant of
-       rematerialising, which depenetrate already solves for the walking case */
-    const y0 = player.pos.y+0.30, y1 = player.pos.y+player.height-0.05;
-    if (blocked(player.pos.x, player.pos.z, y0, y1, P_RADIUS))
-      depenetrate(player.pos, P_RADIUS, y0, y1);
-    player.onGround = false;
-    player.jumpsLeft = AIR_JUMPS;
-    fxSmoke(player.pos.x, player.pos.y, player.pos.z, 28, 0.55, 1.9);
-    SFX.apparate(false);
-    SP.appear = 1; SP.appearDur = 0.30;
-    alertToMagic(DIAG*0.30, 0.25);
+  if (SP.flyWind <= 0){ SP.flyWind = 0.16; SFX.flightWind(1); }
+  /* Throttled, because these are spawned on real time and aged on the yard's
+     dilated clock — so each one lives about three times as long as it looks. At
+     two a frame for an unbounded flight that lapped the 360-slot soft pool in a
+     few seconds and evicted every other alpha particle in the game. */
+  SP.trailT -= dt;
+  if (SP.trailT <= 0){
+    SP.trailT = 0.045;
+    fxSmoke(player.pos.x, player.pos.y+0.6, player.pos.z, 2, 0.35, 0.7, 0.24);
   }
+}
+
+/** Rematerialise. Called when the key comes up, and defensively from the pause
+ *  and end-of-round paths so a flight can never outlive the round that started it. */
+function endSmokeFlight(){
+  if (SP.smokeFlight <= 0) return;
+  SP.smokeFlight = 0;
+  cancelMantle();
+  const dest = safeLanding(player.pos.x, player.pos.z, player.pos.y);
+  player.pos.set(dest.x, dest.y, dest.z);
+  /* the one case the snap cannot cover is being wedged at the instant of
+     rematerialising, which depenetrate already solves for the walking case */
+  const y0 = player.pos.y+0.30, y1 = player.pos.y+player.height-0.05;
+  if (blocked(player.pos.x, player.pos.z, y0, y1, P_RADIUS))
+    depenetrate(player.pos, P_RADIUS, y0, y1);
+  player.onGround = false;
+  player.jumpsLeft = AIR_JUMPS;
+  fxSmoke(player.pos.x, player.pos.y, player.pos.z, 28, 0.55, 1.9);
+  SFX.apparate(false);
+  SP.appear = 1; SP.appearDur = 0.24;
+  /* the cooldown starts when you arrive, not when you left — otherwise a long
+     flight would come back off cooldown before it had even finished */
+  SP.acd.apparate = abilityById.apparate.cd * 1.7;
+  SP.acdMax.apparate = SP.acd.apparate;
+  alertToMagic(DIAG*0.30, 0.25);
+  updateSpellUI();
 }
 
 /* ---------------------------------------------------------------------------
@@ -7810,7 +7912,6 @@ function selectPrimary(i){
   if (perfNow - _selAt < 90) return;
   _selAt = perfNow;
   SP.sel = i;
-  SP.charge = 0; SP.charging = false;
   SFX.boltClick();
   updateSpellUI();
 }
@@ -7830,59 +7931,43 @@ function updateApparateKey(dt){
         !player.dead && SP.smokeFlight <= 0 && SP.reforming <= 0){
       SP.qFired = true;
       startSmokeFlight();
-      /* crossing the yard costs more than stepping across it */
-      SP.acd.apparate = abilityById.apparate.cd * 1.7;
-      SP.acdMax.apparate = SP.acd.apparate;
       SP.casts++;
       updateSpellUI();
     }
   } else {
-    if (SP.qDown && !SP.qFired) triggerAbility('apparate');   // released short: blink
+    /* Letting go is the only thing that ends a flight. Hold it as long as you
+       like — the cooldown is charged on arrival instead. */
+    if (SP.smokeFlight > 0) endSmokeFlight();
+    else if (SP.qDown && !SP.qFired) triggerAbility('apparate');   // released short: blink
     SP.qDown = false; SP.qHeld = 0; SP.qFired = false;
   }
 }
 
 /**
- * The cast loop. Three shapes of spell live here: held (Crucio, continuous),
- * charged (a wind-up that has to complete, which is what stops Avada Kedavra
- * being a click) and immediate. Mirrors the contract of the firing block it
- * replaces, including honouring the click buffer.
+ * The cast loop. Two shapes of spell live here: held (Crucio, continuous) and
+ * immediate. Nothing winds up any more — Avada Kedavra used to demand half a
+ * second on the button before it would fire, which made the signature spell of
+ * the mode feel like it was arguing with you. The cooldown is the whole cost
+ * now. Mirrors the contract of the firing block it replaces, click buffer
+ * included, so a press landing during a cooldown still answers the moment it can.
  */
 function updateCasting(dt){
+  /* Sampled before the key is read, because releasing Q lands you inside
+     updateApparateKey — and the camera was written from the in-flight position
+     earlier this frame. Casting on the landing frame would have fired the spell
+     from wherever the smoke was rather than from where the body arrived. */
+  const wasFlying = SP.smokeFlight > 0;
   updateApparateKey(dt);
   const sp = spellSel();
-  const busy = player.dead || !G.running || SP.smokeFlight > 0 || SP.reforming > 0;
-  const holding = player.triggerHeld && !busy;
+  const busy = player.dead || !G.running || SP.smokeFlight > 0 || SP.reforming > 0 || wasFlying;
 
   if (sp.hold){
-    SP.charging = false; SP.charge = 0;
-    if (holding) castCrucio(dt);
+    if (player.triggerHeld && !busy) castCrucio(dt);
     else if (SP.crucioOn) SP.crucioOn = null;
     return;
   }
   if (SP.crucioOn) SP.crucioOn = null;
 
-  if (sp.charge > 0){
-    if (holding && SP.cd[SP.sel] <= 0){
-      SP.charging = true;
-      SP.charge = Math.min(1, SP.charge + dt/sp.charge);
-      SP.chargeSnd -= dt;
-      if (SP.chargeSnd <= 0){ SP.chargeSnd = 0.085; SFX.castCharge(SP.charge); }
-      /* releasing early cancels rather than firing weakly: the wind-up is the
-         cost of the curse, so paying part of it buys nothing */
-      if (SP.charge >= 1){
-        SP.charge = 0; SP.charging = false;
-        castPrimary();
-        player.clickBuf = 0;
-      }
-    } else {
-      SP.charging = false;
-      SP.charge = damp(SP.charge, 0, 9, dt);
-    }
-    return;
-  }
-
-  SP.charging = false; SP.charge = 0;
   if ((player.triggerHeld || player.clickBuf > 0) && !busy){
     if (castPrimary()) player.clickBuf = 0;
   }
@@ -7891,38 +7976,59 @@ function updateCasting(dt){
 /* ---------------------------------------------------------------------------
    Per-frame
    --------------------------------------------------------------------------- */
+/**
+ * The yard's clock. Apparition dilates the world and not the man crossing it:
+ * everything on the world side of the frame — the squad, their tracers, their
+ * brass, the dust — runs on the returned dt, while the player, his wand and the
+ * HUD stay on real time. That split is the whole reason flying at 15 m/s reads
+ * as fast: relative to the men you are passing you are moving faster than the
+ * old 30 m/s ever did, while the input under your hand stays responsive.
+ *
+ * Eased rather than switched, so entering and leaving smoke is a ramp. A named
+ * function rather than two lines inline in the frame loop because the frame loop
+ * is the one part of this file a headless probe cannot drive — software
+ * rendering a hundred soldiers runs at about one frame a second, far too slow to
+ * accumulate a key-hold — so anything only reachable from inside it is
+ * effectively untestable.
+ */
+function updateTimeScale(dt){
+  SP.timeScale = damp(SP.timeScale, SP.smokeFlight > 0 ? APPARATE_TIMESCALE : 1, 13, dt);
+  return dt * SP.timeScale;
+}
+
 function updateSpells(dt){
   /* Operator mode never enters this function. Guarding here rather than at the
      call site as well, because half of what follows — the regeneration in
      particular, which would happily top an operator up to 250 — is only correct
      for the other body. */
   if (!isDark()) return;
-  /* A pause taken mid-wind-up left SP.charging latched, so the ember stayed lit
-     and kept throwing sparks across the pause overlay. */
-  if (!G.running && SP.charging){ SP.charging = false; SP.charge = 0; }
   /* Cooldowns only run while the round is live. The visual systems below run
      regardless, so a shield fades and smoke clears on the pause screen instead
      of freezing mid-frame — but pausing must not be a way to bank a curse. */
   if (G.running){
-    for (let i=0;i<SP.cd.length;i++) if (SP.cd[i] > 0) SP.cd[i] = Math.max(0, SP.cd[i]-dt);
-    for (const a of ABILITIES) if (SP.acd[a.id] > 0) SP.acd[a.id] = Math.max(0, SP.acd[a.id]-dt);
+    /* On the yard's clock, not yours. Removing the duration cap on flight made
+       this load-bearing: dilating the world while your own cooldowns kept
+       running in real time meant holding Q for twenty seconds recharged every
+       curse in the game while the squad moved seven metres. */
+    const cdt = dt * SP.timeScale;
+    for (let i=0;i<SP.cd.length;i++) if (SP.cd[i] > 0) SP.cd[i] = Math.max(0, SP.cd[i]-cdt);
+    for (const a of ABILITIES) if (SP.acd[a.id] > 0) SP.acd[a.id] = Math.max(0, SP.acd[a.id]-cdt);
   }
 
-  /* the ember: spell colour, charge glow and a flash on release */
+  /* the ember: spell colour, and a flash on release */
   SP.emberFlash = damp(SP.emberFlash||0, 0, 7, dt);
   const sp = spellSel();
-  const chargeGlow = SP.charging ? SP.charge : 0;
-  WAND_EMBER.emissiveIntensity = 0.22 + chargeGlow*2.6 + SP.emberFlash*4.5;
-  WAND_EMBER.opacity = 0.55 + chargeGlow*0.4 + SP.emberFlash*0.4;
-  if (!SP.charging && SP.emberFlash < 0.02) WAND_EMBER.emissive.copy(sRGB(sp.hex));
-  if (chargeGlow > 0.02 || SP.emberFlash > 0.02){
+  WAND_EMBER.emissiveIntensity = 0.22 + SP.emberFlash*4.5;
+  WAND_EMBER.opacity = 0.55 + SP.emberFlash*0.4;
+  if (SP.emberFlash < 0.02) WAND_EMBER.emissive.copy(sRGB(sp.hex));
+  if (SP.emberFlash > 0.02){
     /* embers shed off the tip; they live in world space so they trail behind as
        you turn, which is most of what sells the wand as hot */
     WAND_VM.tip.getWorldPosition(_dlC);
     camera.getWorldDirection(_dlA);
     const wx = camera.position.x + _dlA.x*0.62, wy = camera.position.y - 0.13 + _dlA.y*0.62,
           wz = camera.position.z + _dlA.z*0.62;
-    if (Math.random() < 0.6*(chargeGlow + SP.emberFlash))
+    if (Math.random() < 0.6*SP.emberFlash)
       spawnParticle(PS_SPARK, wx, wy, wz, rand(-0.5,0.5), rand(0.2,1.1), rand(-0.5,0.5),
         {color:hexToRGB(sp.hex), size:rand(0.02,0.04), life:rand(0.2,0.5), drag:2.6, grav:-2});
   }
@@ -7940,13 +8046,21 @@ function updateSpells(dt){
     /* held by stepSmokeFlight */
   } else if (SP.appear > 0){
     SP.appear -= dt/SP.appearDur;
-    SP.veil = clamp(SP.appear, 0, 1)*0.8;
+    /* matched to the in-flight veil: at 0.8 rematerialising was darker than the
+       flight it ended, which read as the manoeuvre getting worse as it finished */
+    SP.veil = clamp(SP.appear, 0, 1)*0.34;
     if (SP.appear <= 0){ SP.appear = 0; SP.veil = 0; }
   } else SP.veil = damp(SP.veil, 0, 9, dt);
 
   /* out-of-combat regeneration. Any damage taken resets the delay, which is
      what keeps it from being a heal button mid-firefight. */
+  /* Not while you are smoke. Unlimited flight plus immunity to damage plus a
+     regenerating body is a free full heal for the price of holding a key, which
+     is the one thing removing the duration cap could not be allowed to buy. */
   if (G.running && !player.dead && player.hp < DARK_HP){
+    /* Held, not merely paused. Suspending the tick alone still let a flight sit
+       out the delay, so a long one landed already regenerating. */
+    if (SP.smokeFlight > 0 || SP.reforming > 0) SP.regenT = DARK_REGEN_DELAY;
     SP.regenT -= dt;
     if (SP.regenT <= 0){
       const before = Math.round(player.hp);
@@ -8003,15 +8117,17 @@ function drawSpellHUD(){
          base left the wipe pinned full for the first 0.8 seconds of it */
       const span = SP.acdMax[r.idx] || abilityById[r.idx].cd;
       k = span > 0 ? clamp(SP.acd[r.idx]/span, 0, 1) : 0;
+      /* a flight has no cooldown running yet — it is charged on landing — so
+         without this the row read fully ready for the whole manoeuvre */
+      if (r.idx === 'apparate' && SP.smokeFlight > 0) k = 1;
     }
     r.fill.style.transform = `scaleX(${k})`;
     r.el.classList.toggle('cool', k > 0.02);
   }
   const sp = spellSel();
-  /* winding up fills the bar; recharging drains it. Both arms of this used to
-     evaluate to zero, so the bar never moved for anything but a charge. */
-  const k = SP.charging ? SP.charge
-          : (sp.cd > 0 && SP.cd[SP.sel] > 0 ? 1 - SP.cd[SP.sel]/sp.cd : 0);
+  /* recharge, filling as the curse comes back. Nothing winds up any more, so
+     this is the selected spell's cooldown and nothing else. */
+  const k = (sp.cd > 0 && SP.cd[SP.sel] > 0) ? 1 - SP.cd[SP.sel]/sp.cd : 1;
   $('chargeFill').style.transform = `scaleX(${clamp(k,0,1)})`;
   $('castHint').textContent = SP.smokeFlight > 0 ? 'APPARATING'
                             : SP.reforming > 0 ? 'REFORMING'
@@ -8196,7 +8312,10 @@ function updatePlayer(dt){
   if (!jumpedNow && !player.onGround && player.mantleT<=0){
     /* holding space into a ledge climbs it; a fresh tap does too, so the
        air hop is only spent when there's nothing to grab */
-    if (keys['Space'] && player.vel.y < 2.6){
+    /* not while apparating: there is no body to pull up with, and a mantle
+       latched mid-flight took effect the instant you rematerialised and dragged
+       you back to wherever you were when you grabbed it */
+    if (keys['Space'] && player.vel.y < 2.6 && SP.smokeFlight <= 0){
       const led = findMantle();
       if (led) startMantle(led);
     }
@@ -8480,16 +8599,6 @@ function updateViewmodel(dt, mdx, mdy){
      wand has one moving part and it is the arm, so charge, shield and flight all
      have to be legible from the pose alone. */
   if (dark){
-    if (SP.charge > 0.02){
-      /* winding up: drawn back and raised, with a tremor that grows with it */
-      const tr = SP.charge;
-      const j = Math.sin(perfNow*0.045) * Math.sin(perfNow*0.021);
-      px += j*0.006*tr;
-      py += 0.030*tr + Math.sin(perfNow*0.038)*0.006*tr;
-      pz -= 0.034*tr;
-      rx -= 0.16*tr;
-      rz += j*0.05*tr;
-    }
     /* Protego: wand raised and the tip tilted up behind the shield.
        The first attempt at this rolled it across the body (ry -0.62, rz +0.92)
        and drew it toward the lens, which put 34cm of shaft broadside at 55cm
@@ -8667,17 +8776,27 @@ function applyMode(m){
   const dark = isDark();
   document.body.classList.toggle('dark', dark);
 
-  /* the yard is untouched — this and the post grade are the whole difference */
-  const k = dark ? 0.60 : 1;
-  hemi.intensity    = LIGHT_BASE.hemi   * k;
-  sun.intensity     = LIGHT_BASE.sun    * (dark ? 0.52 : 1);
-  bounce.intensity  = LIGHT_BASE.bounce * k;
-  skyFill.intensity = LIGHT_BASE.sky    * (dark ? 0.78 : 1);
+  /* The yard is untouched — this and the post grade are the whole difference.
+     The sun comes down a long way because a hard key is what makes the mode read
+     as daylight; the fill terms come down much less, because hemi and bounce are
+     the only things lighting a surface turned away from the sun and cutting them
+     is what put the ground into the black. */
+  hemi.intensity    = LIGHT_BASE.hemi   * (dark ? DARK_LIGHT.hemi   : 1);
+  sun.intensity     = LIGHT_BASE.sun    * (dark ? DARK_LIGHT.sun    : 1);
+  bounce.intensity  = LIGHT_BASE.bounce * (dark ? DARK_LIGHT.bounce : 1);
+  skyFill.intensity = LIGHT_BASE.sky    * (dark ? DARK_LIGHT.sky    : 1);
   /* thicker haze, same colour: tinting it would put a seam at the horizon where
-     the fog meets a sky dome that has its own shader */
-  scene.fog.density = FOG_BASE_DENSITY * (dark ? 1.34 : 1);
+     the fog meets a sky dome that has its own shader. Only slightly thicker —
+     fog greys the far half of the yard, and past about 1.15 it was competing
+     with the grade for the same contrast rather than adding atmosphere. */
+  scene.fog.density = FOG_BASE_DENSITY * (dark ? DARK_LIGHT.fog : 1);
   compMat.uniforms.dark.value = dark ? 1 : 0;
-  compMat.uniforms.vig.value  = dark ? 1.24 : 1.0;
+  /* the vignette was doing real damage at 1.24: the corners of a 16:9 frame are
+     most of the ground you are walking on */
+  compMat.uniforms.vig.value  = dark ? DARK_LIGHT.vig : 1.0;
+  compMat.uniforms.dkKnee.value = DARK_GRADE.knee;
+  compMat.uniforms.dkGain.value = DARK_GRADE.gain;
+  compMat.uniforms.dkLift.value = DARK_GRADE.lift;
 
   /* hands */
   for (const w of WEAPONS) w.vm.group.visible = false;
@@ -8781,14 +8900,14 @@ function resetWorldState(){
   /* dark lord: every cooldown, every held spell and the soul itself go back to
      the start. The enemies are freshly built above, so their status timers came
      back zeroed with them and there is nothing to clear on that side. */
-  SP.sel=0; SP.charge=0; SP.charging=false; SP.chargeSnd=0; SP.emberFlash=0;
+  SP.sel=0; SP.emberFlash=0;
   for (let i=0;i<SP.cd.length;i++) SP.cd[i]=0;
   for (const a of ABILITIES){ SP.acd[a.id]=0; SP.acdMax[a.id]=a.cd; }
   SP.protego=false; SP.protegoK=0; SP.protegoFlash=0;
   SP.crucioOn=null; SP.crucioT=0;
   SP.appear=0; SP.veil=0; SP.smokeFlight=0;
   SP.qDown=false; SP.qHeld=0; SP.qFired=false;
-  SP.flying=false; SP.flyT=0; SP.flyWind=0;
+  SP.flying=false; SP.flyT=0; SP.flyWind=0; SP.timeScale=1;
   SP.horcrux=true; SP.reforming=0;
   SP.revealT=0; SP.pulseR=0; SP.pulseAt=0;
   SP.regenT=DARK_REGEN_DELAY;
@@ -8830,6 +8949,10 @@ function endGame(win){
   for (const e of enemies) e.tag.sprite.visible = false;
   /* and the mode's world-space furniture, which would otherwise hang over the
      debrief the same way the nameplates used to */
+  if (SP.smokeFlight > 0) endSmokeFlight();
+  /* endSmokeFlight re-arms SP.appear, which drives the veil, so the clears below
+     have to come after it or the debrief opens under a full smoke wipe */
+  SP.timeScale = 1; SP.appear = 0; SP.reforming = 0;
   protegoMesh.visible = false;
   silMesh.count = 0; silMesh.visible = false;
   /* the reveal timers have to go too, or updateReveal rebuilds the silhouettes
@@ -8932,13 +9055,18 @@ function frame(now){
 
   const mdx = mouseDX, mdy = mouseDY;
 
+  let wdt = dt;
   if (G.running && !G.over){
-    G.elapsed += dt;
+    G.elapsed += dt;                       // the stopwatch is real time
     if (G.grace > 0) G.grace -= dt;
     updatePlayer(dt);
+    /* after updatePlayer, so entering or leaving smoke takes effect on the same
+       frame the key was read rather than the next one */
+    wdt = updateTimeScale(dt);
     updateCombatDirector();
-    for (const e of enemies) updateEnemy(e, dt);
+    for (const e of enemies) updateEnemy(e, wdt);
   } else {
+    wdt = updateTimeScale(dt);             // let the ramp settle on the menus too
     mouseDX = mouseDY = 0;
     /* menu camera: a slow crane through the yard rather than a map overview,
        so the containers pass close enough to give real parallax */
@@ -8968,11 +9096,11 @@ function frame(now){
   skyUniforms.uTime.value = now*0.001;
   updateSunShafts();
   updateViewmodel(dt, mdx, mdy);
-  updateShells(dt);
-  updateTracers(dt);
-  updateEnemyFlashes(dt);
-  updateParticles(PS_SPARK, dt);
-  updateParticles(PS_SOFT, dt);
+  updateShells(wdt);
+  updateTracers(wdt);
+  updateEnemyFlashes(wdt);
+  updateParticles(PS_SPARK, wdt);
+  updateParticles(PS_SOFT, wdt);
   updateCrosshair(dt);
   updateDmgArcs(dt);
   if (isDark()) drawSpellHUD();
