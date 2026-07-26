@@ -975,6 +975,17 @@ const SFX = (function(){
     tone({type:'sawtooth', f0:rand(600,760), f1:rand(380,470), dur:0.5, gain:0.10*v, lp:2600, pan, verb:0.4, delay:0.05});
     noise({type:'bandpass', freq:1500, q:2.5, gain:0.07*v, dur:0.34, atk:0.02, pan});
   }
+  /* meat and bone parting. A wet low burst under a bright snap, then a short
+     scatter of pieces hitting concrete. */
+  function sever(pan, dist){
+    const v = clamp(1-dist/(AUDIO_REACH*0.7), 0.2, 1);
+    noise({type:'lowpass', freq:900, sweep:180, gain:0.34*v, dur:0.26, atk:0.001, pan, verb:0.4});
+    noise({type:'highpass', freq:2400, gain:0.16*v, dur:0.09, atk:0.001, pan});
+    tone({type:'sawtooth', f0:rand(180,240), f1:rand(48,70), dur:0.32, gain:0.13*v, lp:1300, pan, verb:0.35});
+    for (let i=0;i<4;i++)
+      noise({type:'bandpass', freq:rand(500,1400), q:2, gain:0.06*v, dur:0.08,
+             pan:pan+rand(-0.35,0.35), delay:0.22+i*rand(0.06,0.16)});
+  }
   function sectum(pan){
     parseltongue(0.10, 0.18);
     noise({type:'bandpass', freq:5200, q:1.6, sweep:600, gain:0.26, dur:0.16, atk:0.001, pan, verb:0.3});
@@ -1038,7 +1049,7 @@ const SFX = (function(){
            jumpSound, landSound, impactWall, impactFlesh, hitBeep, killChime, enemyDeath,
            heartbeat, damageTaken, alarm, suspend, resume,
            parseltongue, killingCurse, bombarda, crucioLoop, scream, sectum,
-           disarm, petrify, levitate, apparate, flightWind, protegoUp, protegoHit,
+           disarm, petrify, levitate, apparate, flightWind, protegoUp, protegoHit, sever,
            revealPing, revelio, horcrux };
 })();
 
@@ -3857,6 +3868,143 @@ function makeParticleSystem(count, additive){
 const PS_SPARK = makeParticleSystem(360, true);
 const PS_SOFT  = makeParticleSystem(360, false);
 
+/* -------------------------------------------------------------------------
+   Smoke.
+
+   Its own system rather than a heavier call into PS_SOFT, for three reasons the
+   shared one cannot give: it needs an order of magnitude more live particles
+   than blood and dust put together, it needs a per-particle seed so that two
+   thousand overlapping sprites do not read as two thousand identical discs, and
+   it needs its own integrator for the swirl that turns a cone of puffs into a
+   curling tendril.
+
+   The density is entirely in the overlap. A single sprite here is a soft,
+   mottled, randomly rotated smudge at low alpha; what makes it look like the
+   films is fifty of them stacked along a metre of travel, each fraying at a
+   different angle.
+   ------------------------------------------------------------------------- */
+function makeSmokeSystem(count){
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count*3), col = new Float32Array(count*3);
+  const siz = new Float32Array(count), alp = new Float32Array(count), sed = new Float32Array(count);
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('pcolor',   new THREE.BufferAttribute(col,3));
+  geo.setAttribute('psize',    new THREE.BufferAttribute(siz,1));
+  geo.setAttribute('palpha',   new THREE.BufferAttribute(alp,1));
+  geo.setAttribute('pseed',    new THREE.BufferAttribute(sed,1));
+  const mat = new THREE.ShaderMaterial({
+    uniforms:{ hscale:{value: innerHeight*DPR*0.5} },
+    vertexShader:`
+      attribute vec3 pcolor; attribute float psize; attribute float palpha; attribute float pseed;
+      uniform float hscale;
+      varying vec3 vC; varying float vA; varying float vS;
+      void main(){
+        vC = pcolor; vA = palpha; vS = pseed;
+        vec4 mv = modelViewMatrix * vec4(position,1.0);
+        gl_PointSize = max(1.0, psize * hscale / max(0.001,-mv.z));
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader:`
+      varying vec3 vC; varying float vA; varying float vS;
+      float h21(vec2 p){ return fract(sin(dot(p, vec2(41.31, 289.17))) * 43758.5453); }
+      float vnoise(vec2 p){
+        vec2 i = floor(p), f = fract(p);
+        f = f*f*(3.0-2.0*f);
+        float a = h21(i), b = h21(i+vec2(1.0,0.0));
+        float c = h21(i+vec2(0.0,1.0)), d = h21(i+vec2(1.0,1.0));
+        return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
+      }
+      void main(){
+        if (vA <= 0.003) discard;
+        vec2 d = gl_PointCoord - 0.5;
+        float r = length(d);
+        if (r > 0.5) discard;
+        /* every sprite samples its noise at its own rotation, which is what
+           stops a stack of them tiling into a visible grid of identical blobs */
+        float a = vS * 6.2831853;
+        float ca = cos(a), sa = sin(a);
+        vec2 rp = vec2(d.x*ca - d.y*sa, d.x*sa + d.y*ca);
+        /* two octaves is enough for interior structure at this size; a third is
+           invisible once the sprite is more than a few metres away */
+        float n = vnoise(rp*5.5 + vS*17.0)*0.62 + vnoise(rp*12.0 + vS*29.0)*0.38;
+        float edge = smoothstep(0.5, 0.05, r);
+        /* The mottle has to be a RIM effect, not a whole-sprite one. Applied
+           evenly it punched holes through the middle as well, so no amount of
+           stacking ever reached opacity and the rope stayed a grey speckle.
+           Weighted toward the edge, the body of each puff is solid and only the
+           silhouette frays — which is what the films actually look like: a dense
+           dark mass shedding particulate along its boundary. */
+        float core = smoothstep(0.40, 0.04, r);
+        float mott = mix(0.18 + n*1.30, 1.0, core*0.82);
+        float alpha = edge * vA * mott;
+        if (alpha <= 0.004) discard;
+        gl_FragColor = vec4(vC, clamp(alpha, 0.0, 1.0));
+      }`,
+    transparent:true, depthWrite:false, depthTest:true,
+    blending: THREE.NormalBlending
+  });
+  const pts = new THREE.Points(geo, mat);
+  pts.frustumCulled = false;
+  pts.renderOrder = 3;
+  scene.add(pts);
+  const data = new Array(count);
+  for (let i=0;i<count;i++)
+    data[i] = { life:0, max:1, vx:0,vy:0,vz:0, drag:1.2, buoy:0.4, swirl:0, size:1, grow:0, fade:1, seed:0 };
+  return { geo, pts, data, count, head:0, pos, col, siz, alp, sed };
+}
+const PS_SMOKE = makeSmokeSystem(4200);
+
+function spawnSmoke(x,y,z, vx,vy,vz, o){
+  const s = PS_SMOKE, i = s.head; s.head = (s.head+1) % s.count;
+  s.pos[i*3]=x; s.pos[i*3+1]=y; s.pos[i*3+2]=z;
+  const c = o.color;
+  s.col[i*3]=c[0]; s.col[i*3+1]=c[1]; s.col[i*3+2]=c[2];
+  s.siz[i]=o.size; s.alp[i]=o.alpha;
+  s.sed[i]=Math.random();
+  const d = s.data[i];
+  d.life=o.life; d.max=o.life; d.vx=vx; d.vy=vy; d.vz=vz;
+  d.drag = o.drag!==undefined?o.drag:1.2;
+  d.buoy = o.buoy!==undefined?o.buoy:0.35;
+  d.swirl = o.swirl!==undefined?o.swirl:2.2;
+  d.size = o.size; d.grow = o.grow||0.9; d.fade = o.alpha; d.seed = s.sed[i];
+}
+function updateSmoke(dt){
+  const s = PS_SMOKE, {pos,siz,alp,data,count} = s;
+  let any = false;
+  for (let i=0;i<count;i++){
+    const d = data[i];
+    if (d.life <= 0){ if (alp[i]!==0){ alp[i]=0; any=true; } continue; }
+    d.life -= dt;
+    if (d.life <= 0){ alp[i]=0; any=true; continue; }
+    const age = d.max - d.life;
+    /* Curl, cheaply. Two out-of-phase sinusoids per axis keyed off the seed give
+       each particle its own wandering path, and a column of them shears into the
+       rope shape the films use rather than expanding as a cone. */
+    const ph = d.seed*6.2831853;
+    d.vx += Math.sin(ph + age*2.3) * d.swirl * dt;
+    d.vz += Math.cos(ph*1.7 + age*1.9) * d.swirl * dt;
+    d.vy += d.buoy * dt;
+    const k = Math.exp(-d.drag*dt);
+    d.vx*=k; d.vy*=k; d.vz*=k;
+    pos[i*3]   += d.vx*dt;
+    pos[i*3+1] += d.vy*dt;
+    pos[i*3+2] += d.vz*dt;
+    if (pos[i*3+1] < 0.05){ pos[i*3+1] = 0.05; d.vy *= -0.15; d.vx *= 0.86; d.vz *= 0.86; }
+    const t = d.life/d.max;
+    /* in fast, out slow: smoke arrives as a shock and then hangs */
+    alp[i] = d.fade * (t>0.86 ? (1-t)/0.14 : Math.pow(t/0.86, 0.72));
+    siz[i] = d.size + d.grow*(1-t);
+    any = true;
+  }
+  if (any){
+    s.geo.attributes.position.needsUpdate = true;
+    s.geo.attributes.palpha.needsUpdate = true;
+    s.geo.attributes.psize.needsUpdate = true;
+    s.geo.attributes.pcolor.needsUpdate = true;
+    s.geo.attributes.pseed.needsUpdate = true;
+  }
+}
+
 function spawnParticle(sys, x,y,z, vx,vy,vz, o){
   const i = sys.head; sys.head = (sys.head+1) % sys.count;
   sys.pos[i*3]=x; sys.pos[i*3+1]=y; sys.pos[i*3+2]=z;
@@ -5185,7 +5333,8 @@ function spawnEnemies(){
       disarmed:false,              // Expelliarmus took the rifle
       bleed:0, bleedDps:0, bleedTick:0,   // Sectumsempra
       knock:new THREE.Vector3(),   // Bombarda throw, integrated then damped out
-      revealed:0, pulsed:false     // Homenum Revelio: silhouette seconds left, and wave bookkeeping
+      revealed:0, pulsed:false,    // Homenum Revelio: silhouette seconds left, and wave bookkeeping
+      cutOpen:false, gibbed:false, cutDir:null,  // Sectumsempra marked him, along which axis, and whether he has come apart
     };
     parts.hbHead.userData = {enemy:e, part:'head'};
     parts.hbBody.userData = {enemy:e, part:'body'};
@@ -6004,6 +6153,11 @@ function killEnemy(e, head, dir){
   alertSquad(DIAG*(0.35 + (G.kills/G.total)*0.83), 5,
              ex => pick([e.name+' IS DOWN — '+bearingWord(ex), 'MAN DOWN, CONVERGE',
                          'WE LOST '+e.name+', PUSH IN']), 0.85);
+  /* After the status clearing above — a man hoisted by Levicorpus has to be put
+     back on his feet and un-rotated before he can be taken apart, or the pieces
+     inherit a 2.5m hoist and an upside-down model. Before the win check, so the
+     last kill of a round still comes apart on screen. */
+  if (e.cutOpen) dismember(e, e.cutDir || dir || _dlZero);
   if (G.kills>=G.total) endGame(true);
 }
 
@@ -6331,6 +6485,9 @@ function updateEnemy(e, dt){
 
   /* ---------- death ---------- */
   if (e.dead){
+    /* Nothing here owns his pose any more: the limbs are world objects on the
+       gib integrator and the torso is one too. Only the rifle is still ours. */
+    if (e.gibbed){ stepDroppedGun(e, dt); return; }
     if (e.deathT < 1){
       e.deathT = Math.min(1, e.deathT + dt/0.85);
       const k = easeOutCubic(e.deathT);
@@ -6936,16 +7093,272 @@ function fxCurseBeam(from, to, hex, width, sparks){
   spellLight(to, hex, 9, 0.22);
 }
 /** black smoke, used by apparition, flight and the tortured collapse */
+/* Near-black, but graded in three tones. A single flat colour reads as a hole
+   cut in the frame; the mid and the wisp give the mass an inside and an edge,
+   and because they are picked per particle the proportions vary along a trail. */
+const SMOKE_DARK = [0.010,0.010,0.018];
+const SMOKE_MID  = [0.030,0.030,0.043];
+const SMOKE_WISP = [0.075,0.078,0.098];
+function smokeTone(){
+  const r = Math.random();
+  return r < 0.60 ? SMOKE_DARK : (r < 0.89 ? SMOKE_MID : SMOKE_WISP);
+}
+
+/** A dense eruption at a point — the moment of leaving, and of arriving. */
 function fxSmoke(x,y,z, n, spread, rise, size){
-  for (let i=0;i<n;i++){
-    spawnParticle(PS_SOFT, x+rand(-spread,spread), y+rand(0,rise), z+rand(-spread,spread),
-      rand(-1.5,1.5), rand(0.4,2.6), rand(-1.5,1.5),
-      /* near-black but not pure: the grade crushes true black into the
-         background and the plume stops reading as volume */
-      {color:[0.045,0.038,0.055], size:size||0.20, grow:rand(1.0,2.0),
-       life:rand(0.5,1.25), drag:1.3, grav:0.28, alpha:rand(0.55,0.85)});
+  const N = Math.max(3, Math.round(n*7));
+  const base = size ? size*1.6 : 0.40;
+  for (let i=0;i<N;i++){
+    const a = Math.random()*PI*2, s = Math.sqrt(Math.random());
+    spawnSmoke(x + Math.cos(a)*s*spread, y + rand(0,rise), z + Math.sin(a)*s*spread,
+      Math.cos(a)*s*rand(1.6,5.0), rand(0.8,3.6), Math.sin(a)*s*rand(1.6,5.0),
+      {color:smokeTone(), size:base*rand(0.7,1.55), grow:rand(0.35,0.95),
+       life:rand(1.5,3.0), drag:rand(1.5,2.6), buoy:rand(0.15,0.5),
+       swirl:rand(1.4,2.9), alpha:rand(0.60,0.94)});
   }
 }
+
+/**
+ * Smoke laid down along a whole path rather than puffed at its ends.
+ *
+ * This is the shape the films use: a rope of black that leaves one place and
+ * arrives at another, thick in the middle and fraying along its length. An
+ * instant apparition draws the entire line in one call; a flight draws one short
+ * segment per tick, which accumulates into the same rope behind you.
+ */
+const _trU = new THREE.Vector3(), _trP = new THREE.Vector3(), _trQ = new THREE.Vector3();
+function fxSmokeTrail(from, to, perMetre, radius){
+  _trU.subVectors(to, from);
+  const len = _trU.length();
+  if (len < 0.15) return;
+  _trU.divideScalar(len);
+  /* a stable basis across the path so the rope has girth in both directions */
+  _trP.set(-_trU.z, 0, _trU.x);
+  if (_trP.lengthSq() < 1e-5) _trP.set(1,0,0);
+  _trP.normalize();
+  _trQ.crossVectors(_trU, _trP).normalize();
+  const n = clamp(Math.round(len * (perMetre || 55)), 16, 1500);
+  const R = radius === undefined ? 0.30 : radius;
+  for (let i=0;i<n;i++){
+    const t = i/n;
+    const a = Math.random()*PI*2, r = Math.sqrt(Math.random())*R;
+    const ox = (_trP.x*Math.cos(a) + _trQ.x*Math.sin(a))*r;
+    const oy = (_trP.y*Math.cos(a) + _trQ.y*Math.sin(a))*r;
+    const oz = (_trP.z*Math.cos(a) + _trQ.z*Math.sin(a))*r;
+    /* velocity carries along the path and outward from its spine, so the rope
+       keeps travelling after it is drawn instead of hanging as a static tube */
+    spawnSmoke(from.x + _trU.x*len*t + ox,
+               from.y + _trU.y*len*t + oy + rand(-0.05,0.30),
+               from.z + _trU.z*len*t + oz,
+               _trU.x*rand(1.2,4.6) + ox*2.6,
+               _trU.y*rand(0.6,2.2) + rand(0.2,1.3),
+               _trU.z*rand(1.2,4.6) + oz*2.6,
+      {color:smokeTone(), size:rand(0.34,0.72), grow:rand(0.35,0.95),
+       life:rand(1.6,3.2), drag:rand(1.7,2.8), buoy:rand(0.12,0.45),
+       swirl:rand(1.3,2.7), alpha:rand(0.58,0.92)});
+  }
+}
+/* ---------------------------------------------------------------------------
+   Dismemberment.
+
+   Sectumsempra takes its victims apart. The pieces are the soldier's OWN rig
+   nodes, not stand-ins: collapseRig merges meshes by material within each group
+   but leaves the group hierarchy intact, so head, both upper arms and both
+   thighs each survive as a node carrying its own merged geometry. Reparenting
+   one to the scene with attach() therefore costs no new geometry, no new
+   material and no new draw call — the mesh was already being drawn, it just
+   stops being drawn as part of a man.
+
+   The torso keeps e.obj and tumbles on the same integrator, which means it also
+   stays the thing resetWorldState already knows how to dispose. Only the limbs
+   need teardown of their own, and they get it in two places: when they expire,
+   and when the round ends underneath them.
+   --------------------------------------------------------------------------- */
+const GIB_LIFE = 13, GIB_FADE = 1.4;
+const GIBS = [];
+const _gibA = new THREE.Vector3(), _gibB = new THREE.Vector3(), _gibC = new THREE.Vector3();
+
+/* Which nodes come off, and how each one is thrown. `lat` rides the slash axis,
+   which is what makes a horizontal cut throw the arms sideways; `out` pushes
+   away from the spine so nothing flies through the torso. */
+/* `mid` is how far the piece's centre of mass sits from the joint it hangs off,
+   along the node's own -Y. It matters twice over. A node's origin is its JOINT —
+   a thigh's origin is the hip, and the boot is 0.93m below it — so a piece left
+   on its joint origin pinwheels about one end like a hinge instead of tumbling,
+   and a ground test on that origin buries the whole limb before it registers a
+   landing. `rad` is the resting half-thickness, used to sit a piece ON the floor
+   rather than through it. */
+const GIB_PARTS = [
+  { get:p=>p.head,        side: 0, up:[3.4,5.2], out:1.5, lat:2.4, spin:17, mid:-0.02, rad:0.16 },
+  { get:p=>p.arms[0].sh,  side:-1, up:[2.3,4.0], out:2.2, lat:5.8, spin:14, mid:-0.33, rad:0.08 },
+  { get:p=>p.arms[1].sh,  side: 1, up:[2.3,4.0], out:2.2, lat:5.8, spin:14, mid:-0.33, rad:0.08 },
+  { get:p=>p.legs[0].hip, side:-1, up:[1.7,3.3], out:2.9, lat:3.2, spin:11, mid:-0.46, rad:0.11 },
+  { get:p=>p.legs[1].hip, side: 1, up:[1.7,3.3], out:2.9, lat:3.2, spin:11, mid:-0.46, rad:0.11 }
+];
+/* the torso hangs off e.obj, whose origin is the soldier's FEET */
+const TORSO_MID = 1.22, TORSO_RAD = 0.30;
+
+function pushGib(obj, vel, av, rad, permanent){
+  GIBS.push({ obj, vel, av, rad, life:GIB_LIFE, rest:false, permanent:!!permanent });
+}
+
+/**
+ * Take a man apart along the line of the cut.
+ * `dir` is the direction the curse travelled; the pieces are thrown along the
+ * perpendicular of it, because that is where a horizontal slash sends them.
+ */
+function dismember(e, dir){
+  if (e.gibbed) return;
+  e.gibbed = true;
+  const p = e.p;
+
+  /* attach() composes the inverse of the new parent's matrix against the
+     child's CURRENT matrixWorld, and three.js only refreshes those inside
+     render(). Without this the limbs inherit last frame's pose — or, for a man
+     killed on the frame he spawned, no pose at all — and appear somewhere other
+     than where they were drawn. */
+  e.obj.updateMatrixWorld(true);
+
+  /* the rifle goes too, on the path that already exists for it */
+  dropRifle(e, 1.6);
+
+  /* the slash axis: perpendicular to the curse, in the ground plane */
+  _gibA.set(dir.x, 0, dir.z);
+  if (_gibA.lengthSq() < 1e-6) _gibA.set(0,0,1);
+  _gibA.normalize();
+  _gibB.set(-_gibA.z, 0, _gibA.x);            // lateral
+
+  const cx = e.obj.position.x, cz = e.obj.position.z;
+  for (const g of GIB_PARTS){
+    const node = g.get(p);
+    if (!node || !node.parent) continue;
+    node.getWorldPosition(_gibC);
+    scene.attach(node);
+    /* Move the node onto the piece's centre without moving the piece: shift the
+       node along its own local Y and push the children back by the same amount.
+       translateY walks the post-attach axis, so this is correct for whatever
+       pose the man happened to be cut in. */
+    node.translateY(g.mid);
+    for (const c of node.children) c.position.y -= g.mid;
+
+    /* radial component, so a piece leaves the body rather than through it */
+    let rx = _gibC.x - cx, rz = _gibC.z - cz;
+    const rl = Math.hypot(rx, rz);
+    if (rl < 0.05){ rx = _gibB.x*g.side; rz = _gibB.z*g.side; }
+    else { rx /= rl; rz /= rl; }
+
+    const lat = g.lat * (g.side || (Math.random()<0.5?-1:1)) * rand(0.75, 1.25);
+    const vel = new THREE.Vector3(
+      rx*g.out + _gibB.x*lat + _gibA.x*rand(0.4,1.8) + rand(-0.5,0.5),
+      rand(g.up[0], g.up[1]),
+      rz*g.out + _gibB.z*lat + _gibA.z*rand(0.4,1.8) + rand(-0.5,0.5));
+    const av = new THREE.Vector3(rand(-g.spin,g.spin), rand(-g.spin,g.spin), rand(-g.spin,g.spin));
+    pushGib(node, vel, av, g.rad, false);
+    fxSever(_gibC);
+  }
+
+  /* the torso: same integrator, but it is e.obj, so it is never disposed here —
+     it stays the corpse, and resetWorldState frees it exactly as it always did */
+  const tv = new THREE.Vector3(_gibA.x*rand(1.0,2.6) + rand(-1,1), rand(1.6,3.0),
+                               _gibA.z*rand(1.0,2.6) + rand(-1,1));
+  /* same re-origin for the torso, which otherwise helicopters about a point at
+     ankle height and sweeps its own shoulders through the concrete */
+  e.obj.position.y += TORSO_MID;
+  p.body.position.y -= TORSO_MID;
+  pushGib(e.obj, tv, new THREE.Vector3(rand(-5,5), rand(-7,7), rand(-5,5)), TORSO_RAD, true);
+  _gibC.set(cx, e.obj.position.y + 1.15, cz);
+  fxSever(_gibC);
+
+  SFX.sever(clamp((cx-camera.position.x)/14,-1,1), Math.hypot(cx-camera.position.x, cz-camera.position.z));
+}
+
+/** the spray at a severance point */
+function fxSever(at){
+  for (let i=0;i<9;i++){
+    const a = Math.random()*PI*2, s = Math.sqrt(Math.random());
+    spawnParticle(PS_SOFT, at.x, at.y, at.z,
+      Math.cos(a)*s*5.5, rand(0.4,4.5), Math.sin(a)*s*5.5,
+      {color:[0.50,0.02,0.02], size:rand(0.04,0.075), life:rand(0.4,0.95),
+       drag:1.5, grav:-12, alpha:0.92});
+  }
+  spawnParticle(PS_SOFT, at.x, at.y, at.z, 0, 0.5, 0,
+    {color:[0.34,0.02,0.02], size:0.36, grow:0.7, life:0.5, drag:3, grav:0.2, alpha:0.6});
+}
+
+function updateGibs(dt){
+  if (!GIBS.length) return;
+  for (let i=GIBS.length-1;i>=0;i--){
+    const g = GIBS[i], o = g.obj;
+    if (!g.rest){
+      g.vel.y -= 19*dt;
+      o.position.addScaledVector(g.vel, dt);
+      o.rotation.x += g.av.x*dt; o.rotation.y += g.av.y*dt; o.rotation.z += g.av.z*dt;
+      /* the fence is the only horizontal collision a gib gets. Anything more
+         means sweeping a box through the collider set for every limb of every
+         corpse, and a forearm resting half inside a container reads as debris. */
+      o.position.x = clamp(o.position.x, -HALF+0.5, HALF-0.5);
+      o.position.z = clamp(o.position.z, -HALF+0.5, HALF-0.5);
+      /* Whatever is under it, so a limb thrown onto the deck lands on the deck.
+         The probe has to clear the distance fallen this frame or a piece dropping
+         at terminal speed on a long frame passes straight through a raised
+         surface and snaps back up onto it a frame later. */
+      const drop = Math.max(0.6, Math.abs(g.vel.y)*dt + g.rad + 0.2);
+      const gy = groundAt(o.position.x, o.position.z, o.position.y + drop);
+      const floorY = (gy===null ? 0 : gy) + g.rad;
+      if (o.position.y <= floorY){
+        o.position.y = floorY;
+        if (Math.abs(g.vel.y) < 1.4){
+          g.rest = true;
+          g.vel.set(0,0,0);
+          /* lie down rather than stand on end, then re-seat: the resting roll
+             changes which way the piece is long, so the height it needs is not
+             the height it needed a moment ago */
+          o.rotation.set(rand(-0.25,0.25), Math.random()*7, PI*0.5 + rand(-0.4,0.4));
+          const gy2 = groundAt(o.position.x, o.position.z, o.position.y + 0.7);
+          o.position.y = (gy2===null ? 0 : gy2) + g.rad;
+        } else {
+          g.vel.y *= -0.28; g.vel.x *= 0.55; g.vel.z *= 0.55;
+          g.av.multiplyScalar(0.55);
+          if (Math.random() < 0.5) fxBleedAt(o.position);
+        }
+      } else if (Math.random() < 0.28){
+        /* a trail, so a limb in the air reads as one */
+        spawnParticle(PS_SOFT, o.position.x, o.position.y, o.position.z,
+          rand(-0.4,0.4), rand(-0.3,0.3), rand(-0.4,0.4),
+          {color:[0.44,0.02,0.02], size:0.04, life:rand(0.3,0.6), drag:1.4, grav:-9, alpha:0.8});
+      }
+    }
+    /* the torso is a corpse and corpses persist; only the limbs decay, which is
+       also what bounds how many of these can ever exist at once */
+    if (g.permanent) continue;
+    g.life -= dt;
+    if (g.life <= GIB_FADE){
+      const k = clamp(g.life/GIB_FADE, 0, 1);
+      o.scale.setScalar(k);
+      if (g.life <= 0){
+        scene.remove(o);
+        o.traverse(c => { if (c.isMesh && c.geometry) c.geometry.dispose(); });
+        GIBS.splice(i,1);
+      }
+    }
+  }
+}
+/** blood where a piece strikes something */
+function fxBleedAt(at){
+  for (let i=0;i<4;i++)
+    spawnParticle(PS_SOFT, at.x, at.y, at.z, rand(-1.4,1.4), rand(0.2,1.8), rand(-1.4,1.4),
+      {color:[0.46,0.02,0.02], size:0.035, life:rand(0.25,0.5), drag:1.6, grav:-11, alpha:0.85});
+}
+/** everything still in the air when the round ends under it */
+function clearGibs(){
+  for (const g of GIBS){
+    if (g.permanent) continue;           // e.obj — resetWorldState owns that one
+    scene.remove(g.obj);
+    g.obj.traverse(c => { if (c.isMesh && c.geometry) c.geometry.dispose(); });
+  }
+  GIBS.length = 0;
+}
+
 function fxBleedDrip(e){
   const p = e.obj.position;
   for (let i=0;i<3;i++)
@@ -6991,7 +7404,7 @@ const SP = {
   acdMax:Object.create(null),  // and the span it was set from, for the HUD wipe
   emberFlash:0,
   protego:false, protegoK:0, protegoFlash:0,
-  qDown:false, trailT:0,
+  qDown:false, trailT:0, trailPrev:new THREE.Vector3(),
   crucioOn:null, crucioT:0,    // the man currently being tortured, and audio cadence
   appear:0, appearDur:0,       // apparition dissolve/reform animation
   veil:0,                      // post-process smoke, driven by the above
@@ -7220,6 +7633,13 @@ function castSectumsempra(){
       const e = ud.enemy;
       /* opens him up: solid damage now, and he keeps losing blood */
       e.bleed = 4.0; e.bleedDps = 11; e.bleedTick = 0.1;
+      /* opened up. Whether he dies now or bleeds out ten seconds later, he comes
+         apart — the flag rides on the man rather than on this call site. */
+      e.cutOpen = true;
+      /* remembered, because he may not die now — a bleed-out reaches killEnemy
+         with no direction at all, and every corpse in the round would then come
+         apart along the same world axis */
+      e.cutDir = dir.clone();
       fxImpactFlesh(hits[0].point, dir, hits[0].distance, false);
       damageEnemy(e, 46, false, dir, hits[0].point);
     } else if (i===3){
@@ -7659,13 +8079,19 @@ function cancelMantle(){
   player.mantleT = 0;
   player.mantleTilt = 0;
 }
+const _appFrom = new THREE.Vector3(), _appTo = new THREE.Vector3();
 function apparateTo(dest){
   cancelMantle();
+  _appFrom.set(player.pos.x, player.pos.y + 0.95, player.pos.z);
   /* departure plume is for everyone else — you are already gone */
   fxSmoke(player.pos.x, player.pos.y, player.pos.z, 26, 0.45, 1.7);
   spellLight(player.pos, 0x2a1c3a, 6, 0.3);
   SFX.apparate(true);
   player.pos.set(dest.x, dest.y, dest.z);
+  /* and the rope between the two, which is the part that reads as apparition
+     rather than as two unrelated puffs */
+  _appTo.set(dest.x, dest.y + 0.95, dest.z);
+  fxSmokeTrail(_appFrom, _appTo, 60, 0.32);
   player.vel.set(0,0,0);
   player.onGround = false;
   player.jumpsLeft = AIR_JUMPS;
@@ -7695,6 +8121,7 @@ function startSmokeFlight(){
   SP.smokeFlight = 1e-4;
   SP.smokeDir.copy(_dlA);
   SP.veil = Math.max(SP.veil, 0.34);
+  SP.trailPrev.set(player.pos.x, player.pos.y+0.72, player.pos.z);
   fxSmoke(player.pos.x, player.pos.y, player.pos.z, 22, 0.45, 1.6);
   SFX.apparate(true);
   player.vel.set(0,0,0);
@@ -7734,10 +8161,16 @@ function stepSmokeFlight(dt){
      few seconds and evicted every other alpha particle in the game. */
   SP.trailT -= dt;
   if (SP.trailT <= 0){
-    SP.trailT = 0.045;
-    fxSmoke(player.pos.x, player.pos.y+0.6, player.pos.z, 2, 0.35, 0.7, 0.24);
+    SP.trailT = 0.032;
+    _trailNow.set(player.pos.x, player.pos.y+0.72, player.pos.z);
+    /* segment from the last emission to this one: at 15 m/s and a 32ms tick that
+       is about half a metre, and consecutive segments join into one rope */
+    if (SP.trailPrev.lengthSq() > 0 && SP.trailPrev.distanceTo(_trailNow) < 8)
+      fxSmokeTrail(SP.trailPrev, _trailNow, 72, 0.28);
+    SP.trailPrev.copy(_trailNow);
   }
 }
+const _trailNow = new THREE.Vector3();
 
 /** Rematerialise. Called when the key comes up, and defensively from the pause
  *  and end-of-round paths so a flight can never outlive the round that started it. */
@@ -8879,6 +9312,10 @@ function resetWorldState(){
      Materials and textures are the other way round: E_MAT and INVIS are shared
      by all of them and must not be touched. The tag's canvas texture and sprite
      material are the only per-soldier ones. */
+  /* Before the per-soldier loop below: once a limb has been reparented to the
+     scene it is no longer under e.obj, so e.obj.traverse() cannot free it and it
+     would survive every redeploy for the life of the session. */
+  clearGibs();
   const dropGeo = o => { if (o.isMesh && o.geometry) o.geometry.dispose(); };
   for (const e of enemies){
     scene.remove(e.obj);
@@ -8893,10 +9330,11 @@ function resetWorldState(){
   for (const d of DECALS) d.visible=false;
   for (const s of SHELLS){ s.life=0; s.mesh.visible=false; s.mesh.scale.setScalar(1); }
   for (const t of TRACERS) t.mesh.visible=false;
-  for (const sys of [PS_SPARK,PS_SOFT]){
+  for (const sys of [PS_SPARK,PS_SOFT,PS_SMOKE]){
     for (let i=0;i<sys.count;i++){ sys.data[i].life=0; sys.alp[i]=0; }
     sys.geo.attributes.palpha.needsUpdate = true;
   }
+  SP.trailPrev.set(0,0,0);
   UI.feed.innerHTML='';
 
   G.kills=0; G.headshots=0; G.shots=0; G.hits=0; G.elapsed=0;
@@ -9020,6 +9458,7 @@ allocTargets.onResize = ()=>{
   compMat.uniforms.res.value.set(RTW,RTH);
   PS_SPARK.pts.material.uniforms.hscale.value = RTH*0.5;
   PS_SOFT.pts.material.uniforms.hscale.value  = RTH*0.5;
+  PS_SMOKE.pts.material.uniforms.hscale.value = RTH*0.5;
 };
 allocTargets.onResize();
 
@@ -9103,6 +9542,8 @@ function frame(now){
   skyUniforms.uTime.value = now*0.001;
   updateSunShafts();
   updateViewmodel(dt, mdx, mdy);
+  updateSmoke(wdt);
+  updateGibs(wdt);
   updateShells(wdt);
   updateTracers(wdt);
   updateEnemyFlashes(wdt);

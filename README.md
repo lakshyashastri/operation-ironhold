@@ -173,7 +173,7 @@ not kill him at all.
 | `1` | Avada Kedavra | A green beam that kills whatever it touches. No falloff, no headshot multiplier, no armour — none of it applies. Brings the entire yard down on you. |
 | `2` | Bombarda Maxima | A blast at the aim point: falloff damage in a 6.5m radius, and everyone inside it gets thrown. The containers do not move; the static world is merged and instanced, so there is nothing there to break. |
 | `3` | Crucio | Held, not tapped. He drops his rifle, goes down and screams — and the screaming carries, on the same propagation the gunfire alert uses. Holding a man under it is how you call the rest of the yard to a spot of your choosing. |
-| `4` | Sectumsempra | Seven hitscan samples fanned across the crosshair. Heavy damage plus a bleed that keeps running. Catches two men standing near each other. |
+| `4` | Sectumsempra | Seven hitscan samples fanned across the crosshair. Heavy damage plus a bleed that keeps running, and it takes its victims apart — see below. |
 | `Q` | Apparition | Tap for an instant hop up to 26m. Hold and you become a low black streak, steerable with the mouse, for as long as you keep holding — and the yard slows to a third of speed around you while you do. |
 | `E` | Expelliarmus | Takes the rifle off him and throws it. He is then unarmed, and reacts accordingly. |
 | `F` | Levicorpus | Hoists him 2.5m into the air, upside down, swinging, for five seconds — then drops him, which hurts. |
@@ -203,10 +203,44 @@ jump. Verified at zero bad landings — outside the fence, inside a prop, sunk i
 still stuck after a full second of settling physics — across 2,500 blinks, 400 smoke flights and
 300 Horcrux relocations, with 15% of blinks landing above ground level and the highest at 8.2m.
 
+**Sectumsempra dismembers.** Head, both arms and both legs come off and tumble away along the
+axis of the cut, with the torso spinning off separately. The pieces are the soldier's *own* rig
+nodes, not stand-ins: `collapseRig` merges meshes by material *within* each group, so head, each
+upper arm and each thigh survive as separate nodes carrying their own merged geometry.
+Reparenting one to the scene costs no new geometry, no new material and — measured — 36 extra
+draw calls across a hundred and eight flying pieces, because those meshes were already being
+drawn individually. A man opened up by the curse who survives and bleeds out ten seconds later
+still comes apart, because the mark rides on him rather than on the cast.
+
+Two things about that were subtle enough to get wrong first time round, and did. A rig node's
+origin is the *joint* it hangs from — a thigh's origin is the hip, and the boot is 0.93m below
+it — so a piece left on that origin pinwheels about one end like a hinge instead of tumbling,
+and a ground test against that origin buries the entire limb before it registers a landing. Both
+are fixed by moving each node onto the piece's own centre as it detaches and pushing its children
+back by the same amount, so the geometry does not move but the pivot does. Resting pieces now sit
+within about 10cm of the surface under them, against a limb-length error before.
+
 **Nothing winds up.** Every spell casts on the frame you press the button; the cooldown is
 the whole cost. Avada Kedavra originally demanded half a second on the button before it would
 fire, on the theory that the signature curse should feel deliberate. In the hand it just felt
 like the spell was arguing with you.
+
+**The smoke is its own system.** Apparition lays down a rope of black along the *whole* path —
+origin to destination for an instant hop, and continuously behind you in flight — rather than
+puffing at the ends. It needed a dedicated particle system: an order of magnitude more live
+particles than blood and dust together, a per-particle seed so two thousand overlapping sprites
+do not read as two thousand identical discs, and its own integrator for the swirl that turns a
+cone of puffs into a curling tendril.
+
+Getting it to look like the films took three passes and the failures are instructive. Large
+sprites laid sparsely are a grey wall up close and a string of gaps at range. Small sprites at
+the same spacing are a swarm of flies. Density and size have to be chosen together so
+consecutive sprites overlap at the spacing used. And the noise that gives each puff its interior
+structure has to be weighted to the *rim*: applied evenly it punches holes through the middle
+too, so no amount of stacking ever reaches opacity and the rope stays a grey speckle. Weighted
+outward, the body goes solid and only the silhouette frays — which is what the films actually
+look like, a dense dark mass shedding particulate along its edge. It costs 0.09ms a frame at
+two thousand live particles and no extra draw calls at all, being one `Points` system.
 
 **Apparition dilates the yard, not you.** Holding `Q` slows the world — the squad, their
 tracers, their brass, the dust — to 34% while you keep real time. That split is why the speed
