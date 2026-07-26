@@ -15,11 +15,11 @@ no package manager, and not a single image, audio or model file on disk.
 ![Gameplay](screenshots/gameplay.jpg)
 
 A garrison holds a container yard in Sector 7. Clear it. You pick how many are down there —
-anywhere from ten to a hundred — and there is no clock.
+anywhere from ten to two hundred — and there is no clock.
 
 You also pick *who walks in*. **Operator** is the original game: four weapons, 150 effective
 health, and a fight you can lose. **Dark Lord** is the same yard, the same squad and the same
-props, with a wand instead of a rifle and nine spells instead of four guns.
+props, with a wand instead of a rifle and ten spells instead of four guns.
 
 The entire game — renderer setup, world generation, weapon handling, enemy AI, spellcasting,
 audio synthesis, post-processing and HUD — is about 8,300 lines of JavaScript and CSS inlined
@@ -88,7 +88,7 @@ will not play on a phone.
 
 ## The round
 
-Eliminate every hostile. The slider on the start screen sets how many, from 10 to 100, and
+Eliminate every hostile. The slider on the start screen sets how many, from 10 to 200, and
 defaults to 25; the value applies to the next round, including `REDEPLOY`. There is no time
 limit — the round ends when the last man is down, or when one of them puts you down.
 
@@ -106,7 +106,10 @@ both characters and that was a mistake: it measurably changed the original game,
 doubling incoming damage against a large garrison, which is not something a second campaign
 should do to the first. The Dark Lord scales instead — seven at ten hostiles up to ten at a
 hundred — because with 250 health, a shield and regeneration, two shooters leave him not
-merely safe but unaware anything is happening.
+merely safe but unaware anything is happening. That ramp is pinned to its own reference of a
+hundred rather than to the maximum garrison, so raising the ceiling to 200 left every setting
+from 10 to 100 bit-identical instead of quietly stretching the curve and weakening rounds
+nobody had changed.
 
 Dying ends the round. The report screen shows eliminations, headshots, accuracy and time
 survived — the stopwatch still runs, it just is not a limit any more. The Dark Lord's report
@@ -171,7 +174,7 @@ not kill him at all.
 
 | Key | Spell | What it does |
 | --- | --- | --- |
-| `1` | Avada Kedavra | A green beam that kills whatever it touches. No falloff, no headshot multiplier, no armour — none of it applies. Brings the entire yard down on you. |
+| `1` | Avada Kedavra | A three-layer bolt that kills whatever it touches. No falloff, no headshot multiplier, no armour — none of it applies. A flash at both ends, a shroud of smoke where he stood, and the whole frame goes the colour of the curse for a moment. Brings the entire yard down on you. |
 | `2` | Bombarda Maxima | A blast at the aim point: falloff damage in a 6.5m radius, and everyone inside it gets thrown. The containers do not move; the static world is merged and instanced, so there is nothing there to break. |
 | `3` | Crucio | Held, not tapped. He drops his rifle, goes down and screams — and the screaming carries, on the same propagation the gunfire alert uses. Holding a man under it is how you call the rest of the yard to a spot of your choosing. |
 | `4` | Sectumsempra | Seven hitscan samples fanned across the crosshair. Heavy damage plus a bleed that keeps running, and it takes its victims apart — see below. |
@@ -179,8 +182,8 @@ not kill him at all.
 | `E` | Expelliarmus | Takes the rifle off him and throws it. He is then unarmed, and reacts accordingly. |
 | `F` | Levicorpus | Hoists him 2.5m into the air, upside down, swinging, for five seconds — then drops him, which hurts. |
 | `C` | Petrificus Totalus | Six seconds rigid. Cheapest thing on the list and one of the most useful. |
-| `R` | Homenum Revelio | An expanding shell that ticks once per soldier it reaches and lights him as a silhouette through the containers for five seconds. |
-| `X` | Imperio | Takes a man and gives him back to the yard pointing the other way. He keeps his rifle, his cover sense and his burst discipline; the only thing that changes is who he is trying to kill. Unlimited, and undetectable until he draws blood — see below. |
+| `R` | Homenum Revelio | An expanding shell that ticks once per soldier it reaches and lights him as a silhouette through the containers for five seconds, with a ring of light racing outward across the concrete ahead of it. |
+| `X` | Imperio | Takes a man and gives him back to the yard pointing the other way. He keeps his rifle, his cover sense and his burst discipline; the only thing that changes is who he is trying to kill. Permanent, unlimited, and undetectable until he draws blood. If he had been disarmed, the curse hands him his rifle back — see below. |
 | RMB | Protego | Held. Blocks everything from a 150-degree frontal arc. |
 
 **Protego is a shield, not a dome.** Every source of damage in the game already funnels through
@@ -532,3 +535,87 @@ delay, which is how the collision and AI fixes were regression tested.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Round two
+
+Six changes, and in four of them the interesting part was not the feature.
+
+**Imperio is permanent.** A charmed man stays charmed until he dies, which quietly
+removed the thing the round's ending rested on: charms used to lapse, so a yard of
+nothing but puppets freed itself. Two obvious replacements were measured and both
+failed — releasing the last charmed man leaves a *cluster* of mutually unreachable
+puppets rather than one (21 of 25 kills, then stuck, twice), and releasing on a
+stall frees the whole yard fourteen seconds after you charm it, because measured
+legitimate gaps between puppet kills late in a war reach 130 seconds and no
+constant separates "slow" from "stopped". What replaced it is the honest version
+of the objective: **the round is won when nobody un-charmed is left standing.**
+"Kill everyone" was only ever a proxy for "leave nobody who opposes you", and the
+mode's win screen has always said *THE YARD IS YOURS*. So the debrief now counts
+men turned as well as men killed — you can win 0 + 25 of 25 without firing a
+curse in anger.
+
+**Imperio on a disarmed man gives him his rifle back.** It used to refuse the cast
+outright, because `disarmed` is set by four different spells, cleared nowhere, and
+the combat director drops disarmed men before they can ever be cleared to fire —
+so a disarmed puppet jogged around executing tactics forever without firing a
+shot. Refusing was legible but wrong. Now it re-arms him: `rig.add`, not `attach`,
+because `attach` preserves the world transform and the world transform is the
+rifle lying on the concrete twenty metres away. Verified by muzzle-to-glove
+distance — 0.605 m, exactly the carrying control.
+
+**The map had 121 m² of floor no soldier could reach.** A 60 m² pocket behind the
+west maze and 58 m² of the east container corridor, in every layout. At the
+player's 0.36 m radius only 45 m² is sealed, which is why it read as the soldiers
+refusing to follow rather than as geometry. Two causes. First, `addCollider`
+ignored the rotation its callers passed, so two pipe racks and a sandbag emplaced
+a 3.6 × 1.6 m box crosswise to a 1.0 × 4.5 m mesh — **the choke you walked into
+was not the choke that existed**, which is precisely why the blockage felt
+arbitrary. Second, the passes scatter clutter with no idea what the other passes
+have already sealed. Rather than hand-moving crates, the flood fill decides:
+after every prop is placed, flood from the spawn at the radius the AI actually
+navigates with, and delete the crates walling off any island it cannot reach.
+Crates only — ablation showed dropping every crate plus one mis-placed rack takes
+sealed floor from 121.3 m² to 1.1 m², while barrels and the rest of the clutter
+contribute nothing. Measured after: **0 m² sealed for a soldier, 0.1 for the
+player.** The audit runs before the contact shadows are derived, so a culled crate
+loses its ground skirt for free.
+
+**The garrison reaches 200.** Nothing structural was in the way — the placement
+pool supports over 3,000 patrol loops — but `ENEMY_MAX` was the *denominator* of
+the shooter-cap ramp, so doubling it would have silently dropped the Dark Lord's
+cap from 10 to 8 at a hundred hostiles and 8 to 7 at the default 25. Every
+existing round would have got quieter as a side effect. The ramp now has its own
+reference constant and 10–100 is bit-identical to what it always was. Two
+pre-existing leaks had to be fixed first: spell lights were never marked
+invisible on a reset (7 → 12 point lights after one round with Crucio held, and
+`NUM_POINT_LIGHTS` is baked into every lit shader in the scene), and the dynamic
+resolution floor was a one-way ratchet in closure state that no reset touched —
+one heavy round disabled dynamic resolution for the rest of the session,
+*including every later operator round*, while sitting at full resolution so
+nothing looked wrong.
+
+**Avada Kedavra: the flash was never the problem.** Measured through the real post
+chain, the two point lights ARE the entire flash — switch them off and the frame
+drops straight back to its unlit luminance. So raising them was the wrong lever;
+at peak 40 and 26 they put *half the frame* over the hot threshold and the yard
+disappeared into a milky green wash for two frames, which reads as a bug rather
+than as power. What was actually missing is that **the bolt was invisible**: the
+shipped tracer was 0.036 m thick, which subtends about one pixel at nine metres
+and none at twenty, and painted zero pixels at every brightness and distance
+tested. Brightness cannot fix a sub-pixel feature that the bright pass then
+downsamples by four. So the lights stay near their original values, and the
+upgrade is spent where it shows — three concentric tracers at 0.14 m carrying
+unclamped colour above the bloom threshold, a spark ring and a smoke shroud off
+the body, the wand itself lighting up (it lives in a separate scene with its own
+lights, so previously the yard flashed green and the thing casting the curse did
+not change at all), and a sound that is finally spatialised: it took no arguments
+whatsoever, so a curse at the far fence arrived at exactly the volume of one at
+your feet while a rifle over the same span falls away by thirty decibels.
+
+**Homenum Revelio has a shockwave.** A ring on the concrete driven from the same
+radius that decides which men the wave has reached — same function, same frame,
+so they cannot drift. Two things it needs to work: the band widens with distance,
+because a band that is constant in metres subtends fewer pixels as it travels and
+is gone by the time it reaches the men at the fence; and the centre is latched at
+the cast, because sprinting through a sweep dragged it 21.8 m sideways, which
+nothing showed while the only marker was a handful of sparks.

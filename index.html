@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>OPERATION IRONHOLD — Warehouse District</title>
-<meta name="description" content="Ten to a hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 318 KB HTML file with no build step and no asset files.">
+<meta name="description" content="Ten to two hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 318 KB HTML file with no build step and no asset files.">
 <meta name="author" content="Prasenjit">
 <meta name="theme-color" content="#0a0c0e">
 <link rel="canonical" href="https://starknightt.github.io/operation-ironhold/">
@@ -13,7 +13,7 @@
 <meta property="og:site_name" content="Operation Ironhold">
 <meta property="og:url" content="https://starknightt.github.io/operation-ironhold/">
 <meta property="og:title" content="Operation Ironhold — a first-person shooter in one HTML file">
-<meta property="og:description" content="Ten to a hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 318 KB HTML file with no build step and no asset files.">
+<meta property="og:description" content="Ten to two hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 318 KB HTML file with no build step and no asset files.">
 <meta property="og:image" content="https://starknightt.github.io/operation-ironhold/og.jpg">
 <meta property="og:image:secure_url" content="https://starknightt.github.io/operation-ironhold/og.jpg">
 <meta property="og:image:type" content="image/jpeg">
@@ -25,7 +25,7 @@
 <meta name="twitter:site" content="@Star_Knight12">
 <meta name="twitter:creator" content="@Star_Knight12">
 <meta name="twitter:title" content="Operation Ironhold — a first-person shooter in one HTML file">
-<meta name="twitter:description" content="Ten to a hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 318 KB HTML file with no build step and no asset files.">
+<meta name="twitter:description" content="Ten to two hundred hostiles hold a container yard, and no clock — you set the size of the garrison. The entire game — world, weapons, AI and audio — is one 318 KB HTML file with no build step and no asset files.">
 <meta name="twitter:image" content="https://starknightt.github.io/operation-ironhold/og.jpg">
 <meta name="twitter:image:alt" content="First-person view down a container yard, an M4 carbine firing at a hostile, with minimap, timer and ammo counter on the HUD.">
 <style>
@@ -493,11 +493,11 @@
     <div id="setting">
       <div class="row">
         <span class="lbl">HOSTILES</span>
-        <input type="range" id="countRange" min="10" max="100" step="1" value="25"
+        <input type="range" id="countRange" min="10" max="200" step="1" value="25"
                aria-label="Number of hostiles">
         <span class="val" id="countVal">25</span>
       </div>
-      <div class="scale"><span id="scaleMin">10</span><span id="scaleMax">100</span></div>
+      <div class="scale"><span id="scaleMin">10</span><span id="scaleMax">200</span></div>
       <div class="row mode">
         <span class="lbl">PLAYING AS</span>
         <div id="modePick" role="radiogroup" aria-label="Playable character">
@@ -941,14 +941,38 @@ const SFX = (function(){
     tone({type:'sawtooth', f0:rand(96,132), f1:rand(58,74), dur:L*0.8,
           gain:g*0.30, lp:520, verb:0.24});
   }
-  function killingCurse(){
-    parseltongue(0.20, 0.30);
-    /* the discharge: a hard transient, a descending saw for the beam, and a
-       long tail on the reverb bus so the yard answers back */
-    noise({type:'highpass', freq:2600, gain:0.34, dur:0.09, atk:0.001, verb:0.5});
-    tone({type:'sawtooth', f0:820, f1:70, dur:0.52, gain:0.20, lp:2600, verb:0.6, delay:0.02});
-    tone({type:'square',   f0:1640, f1:210, dur:0.26, gain:0.075, lp:5200, delay:0.02});
-    noise({type:'lowpass', freq:420, gain:0.20, dur:0.44, atk:0.02, verb:0.45, delay:0.05});
+  /* The killing curse.
+   *
+   * Spatialised, which it was not: it took no arguments at all, so a curse fired
+   * at a man on the far fence arrived at exactly the volume of one fired at your
+   * feet, while a rifle over the same span falls away by thirty decibels. Every
+   * other loud thing in this file computes vol from distance and delays by
+   * dist/340; this now does too.
+   *
+   * Layered downward from the transient rather than outward from a single saw:
+   * a crack, the beam itself, a sub-100Hz shove underneath it that the old
+   * version had nothing of at all, and a long tail on the reverb bus. Everything
+   * lands inside forty milliseconds of the keypress — the beam is gone in about
+   * a sixth of a second and the victim has been dead since frame zero, so a
+   * discharge delayed to 150ms would be scoring the aftermath. */
+  function killingCurse(pan, dist){
+    const d = dist === undefined ? 6 : dist;
+    const far = clamp(1 - d/AUDIO_REACH, 0.10, 1);
+    const v = far*far;
+    const dly = d/340;
+    const p = pan || 0;
+    parseltongue(0.22, 0.34);
+    /* the crack */
+    noise({type:'highpass', freq:2400, gain:0.40*v, dur:0.10, atk:0.001, pan:p, verb:0.5, delay:dly});
+    /* the beam: two saws a fifth apart, so it has a pitch rather than just a sweep */
+    tone({type:'sawtooth', f0:880, f1:62,  dur:0.58, gain:0.22*v, lp:2800, pan:p, verb:0.6, delay:dly+0.005});
+    tone({type:'sawtooth', f0:586, f1:41,  dur:0.62, gain:0.13*v, lp:2000, pan:p, verb:0.55, delay:dly+0.012});
+    tone({type:'square',   f0:1760, f1:196, dur:0.28, gain:0.085*v, lp:5200, pan:p, delay:dly+0.008});
+    /* the shove underneath — the thing it was missing */
+    tone({type:'sine',     f0:96,  f1:34,  dur:0.85, gain:0.26*v, lp:220, pan:p, verb:0.4, delay:dly});
+    tone({type:'triangle', f0:58,  f1:27,  dur:1.10, gain:0.15*v, lp:150, pan:p, verb:0.5, delay:dly+0.02});
+    /* and the yard answering back */
+    noise({type:'lowpass', freq:380, sweep:-180, gain:0.22*v, dur:0.70, atk:0.02, pan:p, verb:0.6, delay:dly+0.05});
   }
   function bombarda(pan, dist){
     const v = clamp(1-dist/(AUDIO_REACH*0.9), 0.2, 1);
@@ -1177,7 +1201,13 @@ const adaptive = (()=>{
   const N = 48, ring = new Float32Array(N).fill(16), sorted = new Float32Array(N);
   let head = 0, filled = 0, hold = 1.5;
   let pending = 0, floorIdx = SCALE_STEPS.length-1;
-  return function(dt){
+  /* floorIdx is a one-way ratchet: once a downscale fails to pay for itself the
+     resolution is pinned for good. That is right within a round and wrong across
+     them, because it is closure state that no reset touched — one 200-man round
+     turned dynamic resolution off for the rest of the tab, operator rounds
+     included, and it did so while sitting at renderScale 1.0 so nothing looked
+     wrong. */
+  const fn = function(dt){
     ring[head] = dt*1000; head = (head+1)%N;
     if (filled < N){ filled++; return; }
     hold -= dt;
@@ -1191,7 +1221,9 @@ const adaptive = (()=>{
         floorIdx = Math.max(0, scaleIdx-1);
         scaleIdx = floorIdx; renderScale = SCALE_STEPS[scaleIdx]; allocTargets();
       }
-      pending = 0; hold = 3.0; return;
+      /* the next verdict must not be taken partly from frames rendered at the
+         old resolution — 48 stale samples outlive a 3s hold */
+      pending = 0; hold = 3.0; filled = 0; return;
     }
     if (med > 20.5 && scaleIdx < floorIdx){
       pending = med;
@@ -1200,6 +1232,12 @@ const adaptive = (()=>{
       scaleIdx--; renderScale = SCALE_STEPS[scaleIdx]; allocTargets(); hold = 4.0;
     } else hold = 1.0;
   };
+  fn.reset = function(){
+    ring.fill(16); head = 0; filled = 0; hold = 1.5; pending = 0;
+    floorIdx = SCALE_STEPS.length-1;
+    if (scaleIdx !== 0){ scaleIdx = 0; renderScale = 1; allocTargets(); }
+  };
+  return fn;
 })();
 
 /* ---- fullscreen quad plumbing ---- */
@@ -1248,7 +1286,7 @@ const blurMat = postMat(`
 const compMat = postMat(`
   uniform sampler2D tScene, tBloom;
   uniform vec2  res;
-  uniform float time, bloom, vig, dmg, low, ab, flash, scope, dark, veil;
+  uniform float time, bloom, vig, dmg, low, ab, flash, scope, dark, veil, ak;
   /* the dark grade's three tuning constants, as uniforms so the curve can be
      measured and retuned against a luminance histogram without a shader edit */
   uniform float dkKnee, dkGain, dkLift;
@@ -1263,13 +1301,21 @@ const compMat = postMat(`
     vec2 d  = uv - 0.5;
     float r2 = dot(d,d);
     /* ab is in "screen widths"; 0.02 puts the base fringe at ~2px and a hit at ~15px */
-    float chroma = (ab + dmg * 0.9) * 0.02;
+    float chroma = (ab + dmg * 0.9 + ak * 2.2) * 0.02;
     vec3 col;
     col.r = texture2D(tScene, uv - d*chroma*r2).r;
     col.g = texture2D(tScene, uv).g;
     col.b = texture2D(tScene, uv + d*chroma*r2).b;
     col += texture2D(tBloom, uv).rgb * bloom;
     col += flash;
+    /* Green lift, placed before the tone map and the dark grade so it rolls off
+       with everything else instead of clipping to a flat wash. */
+    if (ak > 0.0005){
+      float e = ak*ak;
+      col += vec3(0.10, 0.62, 0.20) * e * 1.35;
+      /* and a hard bloom of the whole frame toward the curse's colour at the peak */
+      col = mix(col, col*vec3(0.55,1.30,0.68), clamp(e*0.9, 0.0, 0.85));
+    }
 
     /* grade: desaturate, cool the shadows, warm the highs.
        the shadow tint must be multiplicative — an additive lift in linear space
@@ -1370,6 +1416,12 @@ const compMat = postMat(`
     tScene:{value:null}, tBloom:{value:null}, res:{value:new THREE.Vector2()},
     time:{value:0}, bloom:{value:0.60}, vig:{value:1.0}, dmg:{value:0}, low:{value:0},
     ab:{value:0.5}, flash:{value:0}, scope:{value:0}, dark:{value:0}, veil:{value:0},
+    /* the killing curse's own screen response. One float, one program, compiled
+       once at boot — nothing to do with the point-light count that the file warns
+       about at length elsewhere. Written from the always-running block in frame()
+       rather than from updateSpells, which returns early in operator mode and
+       would strand it at its last dark-mode value. */
+    ak:{value:0},
     dkKnee:{value:DARK_GRADE.knee}, dkGain:{value:DARK_GRADE.gain}, dkLift:{value:DARK_GRADE.lift}
   });
 
@@ -1960,6 +2012,8 @@ const CORE = 30;
 const SPAWN = { x:0, z:24 };
 const colliders  = [];   // AABBs for movement
 const worldSolid = [];   // raycast targets for bullets / LOS
+/* Set by the crate pass, consumed by the reachability audit after all placement. */
+let CRATE_CULL = null;
 const groundMesh = [];   // downward raycast (walkable surfaces)
 const ceilMesh   = [];   // upward raycast (head bonk)
 const mapRects   = [];   // minimap footprint {x,z,w,d,c}
@@ -2008,7 +2062,11 @@ const FLOOR_SPAN = HALF*2 + 16;
 TEX.concrete.repeat.setScalar(FLOOR_SPAN / 4.222);
 
 function addCollider(x,y,z,w,h,d){
-  colliders.push({ minX:x-w/2, maxX:x+w/2, minY:y, maxY:y+h, minZ:z-d/2, maxZ:z+d/2 });
+  /* returns the box so a later pass can find and drop it again; every existing
+     caller ignores the value */
+  const c = { minX:x-w/2, maxX:x+w/2, minY:y, maxY:y+h, minZ:z-d/2, maxZ:z+d/2 };
+  colliders.push(c);
+  return c;
 }
 /**
  * One InstancedMesh per tint. r128 declares vColor for USE_INSTANCING_COLOR but
@@ -2831,11 +2889,19 @@ const CONTAINER_COLORS = [0xa85748, 0x53718c, 0x707f56, 0xab8a3f, 0x8b9096, 0x7e
   }
   const CRATE_TINTS = [0xd8c39c, 0xc2a679, 0xa98d64, 0xe0cfae];
   const entries = list.map((p,i)=>{
-    addCollider(p[0],p[1],p[2],S*1.25,S,S*1.25);
-    if (p[1]===0) mapRects.push({x:p[0],z:p[2],w:S,d:S,c:'#4a4238'});
-    return { x:p[0], y:p[1]+S/2, z:p[2], rotY:p[3], color:CRATE_TINTS[i%CRATE_TINTS.length] };
+    const col = addCollider(p[0],p[1],p[2],S*1.25,S,S*1.25);
+    const rect = (p[1]===0) ? {x:p[0],z:p[2],w:S,d:S,c:'#4a4238'} : null;
+    if (rect) mapRects.push(rect);
+    return { x:p[0], y:p[1]+S/2, z:p[2], rotY:p[3], color:CRATE_TINTS[i%CRATE_TINTS.length],
+             _col:col, _rect:rect };
   });
-  instancedByColor(g, MAT.crate, entries);
+  /* Emitting the mesh is deferred until after every other prop has been placed,
+     so the reachability audit further down can still drop a crate from the
+     instance list as well as from the collider set. Crates are the one clutter
+     pass that already separates rolling positions from building geometry, which
+     is what makes this nearly free — and measured, they are also the only pass
+     that seals anything. */
+  CRATE_CULL = { g, entries };
 }
 
 /* ---- barrel stacks ---- */
@@ -3287,13 +3353,24 @@ const CONTAINER_COLORS = [0xa85748, 0x53718c, 0x707f56, 0xab8a3f, 0x8b9096, 0x7e
           row++;
         }
       }
-      addCollider(px,0,pz,3.6,1.1,1.6);
-      extraShadows.push({x:px,z:pz,hw:1.8,hd:0.8,s:0.62});
-      mapRects.push({x:px,z:pz,w:3.6,d:1.6,c:'#4e555c'});
+      /* The collider used to ignore ry, so a rack turned ninety degrees had a
+         3.6x1.6 box lying crosswise to a 1.0x4.5 mesh — the choke you walked
+         into was not the choke that existed, which is exactly why the blockage
+         read as arbitrary. The minimap took the wrong shape from mapRects for
+         the same reason. */
+      const turned = Math.abs(Math.sin(ry)) > 0.5;
+      const cw = turned ? 1.6 : 3.6, cd = turned ? 3.6 : 1.6;
+      addCollider(px,0,pz,cw,1.1,cd);
+      extraShadows.push({x:px,z:pz,hw:cw/2,hd:cd/2,s:0.62});
+      mapRects.push({x:px,z:pz,w:cw,d:cd,c:'#4e555c'});
     };
     rackAt(-24.0, 14.0, 0.0);
     rackAt( 6.5, -27.0, PI/2);
-    rackAt(-36.5, -8.0, PI/2);          /* apron */
+    /* Moved two metres north. Correcting the rotation above is not enough here:
+       the properly-oriented box butts flush against the container beside it and
+       still seals the whole west pocket — 58 square metres of floor a soldier
+       could never reach, which the player could walk into. */
+    rackAt(-36.5, -6.0, PI/2);          /* apron */
     rackAt( 33.0, 24.0, 0.0);
   }
   /* loose pipes on the deck */
@@ -3526,6 +3603,132 @@ const contactShadows = (()=>{
       scene.add(m);
     }
   }
+}
+
+/* -------------------------------------------------------------------------
+   Reachability audit.
+
+   The yard is generated by a dozen independent scatter passes that know nothing
+   about each other, and the result was that 121 square metres of perfectly
+   ordinary floor could not be reached by a soldier at all — a 60 m² pocket
+   behind the west maze and a 58 m² stretch of the east container corridor, in
+   every layout. The player could walk into the west pocket, because his
+   collision radius is 0.36 and the AI navigates at 0.50; so it read as the
+   soldiers refusing to follow rather than as geometry.
+
+   Rather than hand-tuning coordinates, the fill decides. Flood from the spawn at
+   the radius the AI actually steers with, find any island of standable floor it
+   cannot reach, and delete the crates responsible. Crates only: measured across
+   ablations, dropping every crate collider plus the one mis-placed pipe rack
+   takes sealed floor from 121.3 m² to 1.1 m², while barrels and the rest of the
+   clutter contribute nothing at all. Containers, walls, the warehouse and the
+   deck are never candidates — those are the map.
+
+   Runs here because every addCollider has fired by now, and before the contact
+   shadows below, which are derived from `colliders` — so a culled crate loses
+   its ground skirt with no bookkeeping.
+   ------------------------------------------------------------------------- */
+{
+  const R_NAV = 0.50;          // the radius the whiskers actually probe at
+  const STEP  = 0.25;          // 0.5 cannot resolve a 0.9m gap
+  const W = Math.round(HALF*2/STEP) + 1;
+  const cell = v => Math.round((v + HALF) / STEP);
+  const world = c => c*STEP - HALF;
+  const free = new Uint8Array(W*W);
+  const seen = new Uint8Array(W*W);
+  const queue = new Int32Array(W*W);
+
+  function rebuildFree(){
+    for (let j=0;j<W;j++) for (let i=0;i<W;i++)
+      free[j*W+i] = blocked(world(i), world(j), 0.30, 1.65, R_NAV) ? 0 : 1;
+  }
+  /* flood from the spawn, refusing diagonal squeezes between two corners the
+     same way walkable() does */
+  function fill(){
+    seen.fill(0);
+    let head = 0, tail = 0;
+    const s = cell(SPAWN.z)*W + cell(SPAWN.x);
+    if (!free[s]) return 0;
+    seen[s] = 1; queue[tail++] = s;
+    while (head < tail){
+      const cur = queue[head++], ci = cur % W, cj = (cur - ci) / W;
+      for (let dj=-1;dj<=1;dj++) for (let di=-1;di<=1;di++){
+        if (!di && !dj) continue;
+        const ni = ci+di, nj = cj+dj;
+        if (ni<0 || nj<0 || ni>=W || nj>=W) continue;
+        const n = nj*W + ni;
+        if (seen[n] || !free[n]) continue;
+        if (di && dj && (!free[cj*W+ni] || !free[nj*W+ci])) continue;
+        seen[n] = 1; queue[tail++] = n;
+      }
+    }
+    return tail;
+  }
+  /* islands of free-but-unreached floor, largest first */
+  function sealedRegions(){
+    const mark = new Uint8Array(W*W), out = [];
+    for (let start=0; start<W*W; start++){
+      if (!free[start] || seen[start] || mark[start]) continue;
+      let head = 0, tail = 0;
+      mark[start] = 1; queue[tail++] = start;
+      let minX=1e9, maxX=-1e9, minZ=1e9, maxZ=-1e9;
+      while (head < tail){
+        const cur = queue[head++], ci = cur % W, cj = (cur - ci) / W;
+        const wx = world(ci), wz = world(cj);
+        if (wx<minX) minX=wx; if (wx>maxX) maxX=wx;
+        if (wz<minZ) minZ=wz; if (wz>maxZ) maxZ=wz;
+        for (let dj=-1;dj<=1;dj++) for (let di=-1;di<=1;di++){
+          if (!di && !dj) continue;
+          const ni = ci+di, nj = cj+dj;
+          if (ni<0 || nj<0 || ni>=W || nj>=W) continue;
+          const n = nj*W + ni;
+          if (mark[n] || seen[n] || !free[n]) continue;
+          mark[n] = 1; queue[tail++] = n;
+        }
+      }
+      const area = tail*STEP*STEP;
+      if (area >= 3) out.push({ area, minX, maxX, minZ, maxZ });
+    }
+    out.sort((a,b)=> b.area - a.area);
+    return out;
+  }
+
+  const cullable = new Set(CRATE_CULL ? CRATE_CULL.entries.filter(e=>e._col).map(e=>e._col) : []);
+  let dropped = 0;
+  rebuildFree(); fill();
+  for (let pass=0; pass<4; pass++){
+    const regions = sealedRegions();
+    if (!regions.length) break;
+    /* the crates bordering the biggest sealed island are the wall around it */
+    let any = false;
+    for (const reg of regions){
+      const pad = 1.6;
+      for (const c of colliders){
+        if (!cullable.has(c)) continue;
+        if (c.maxX < reg.minX-pad || c.minX > reg.maxX+pad ||
+            c.maxZ < reg.minZ-pad || c.minZ > reg.maxZ+pad) continue;
+        c._cull = true; any = true;
+      }
+    }
+    if (!any) break;
+    for (let i=colliders.length-1;i>=0;i--){
+      if (colliders[i]._cull){ cullable.delete(colliders[i]); colliders.splice(i,1); dropped++; }
+    }
+    rebuildFree(); fill();
+  }
+  if (dropped && CRATE_CULL){
+    /* drop the geometry and the minimap footprints for the crates that went */
+    const live = CRATE_CULL.entries.filter(e => !e._col || !e._col._cull);
+    for (const e of CRATE_CULL.entries){
+      if (e._col && e._col._cull && e._rect){
+        const k = mapRects.indexOf(e._rect);
+        if (k >= 0) mapRects.splice(k,1);
+      }
+    }
+    CRATE_CULL.entries = live;
+  }
+  if (CRATE_CULL) instancedByColor(CRATE_CULL.g, MAT.crate, CRATE_CULL.entries);
+  CRATE_CULL = null;
 }
 
 /* every footprint that actually meets the concrete gets a skirt; stacked boxes
@@ -3761,15 +3964,19 @@ function nearestFree(x, z, radius, height, maxR, baseY){
  * someone standing in a box. Built lazily because the props do not exist yet
  * when this file is parsed.
  */
+/* The AI's own reachability test. STEP and the radius here used to be 0.5 and
+   0.34 — a player-sized body on a lattice too coarse to see a narrow gap, which
+   both over-claimed floor a 0.5-radius soldier cannot enter and under-claimed the
+   east corridor he can, so no patrol route was ever generated through it. */
 const walkable = (() => {
-  const STEP = 0.5, W = Math.round(HALF*2/STEP) + 1;
+  const STEP = 0.25, W = Math.round(HALF*2/STEP) + 1;
   const cell = v => Math.round((v + HALF) / STEP);
   const world = c => c*STEP - HALF;
   let ok = null;
   function build(){
     const free = new Uint8Array(W*W);
     for (let j=0;j<W;j++) for (let i=0;i<W;i++)
-      free[j*W+i] = blocked(world(i), world(j), 0.30, 1.65, 0.34) ? 0 : 1;
+      free[j*W+i] = blocked(world(i), world(j), 0.30, 1.65, 0.50) ? 0 : 1;
     ok = new Uint8Array(W*W);
     const s = cell(SPAWN.z)*W + cell(SPAWN.x);
     const q = [s]; ok[s] = 1;
@@ -4074,7 +4281,7 @@ for (let i=0;i<26;i++){
 }
 let tracerHead=0;
 const _tv1=new THREE.Vector3(), _tv2=new THREE.Vector3();
-function spawnTracer(from, to, color, width){
+function spawnTracer(from, to, color, width, gain){
   const tr = TRACERS[tracerHead]; tracerHead=(tracerHead+1)%TRACERS.length;
   const len = _tv1.subVectors(to,from).length();
   if (len < 0.2) return;
@@ -4082,6 +4289,14 @@ function spawnTracer(from, to, color, width){
   tr.mesh.lookAt(to);
   tr.mesh.scale.set(width||1, width||1, len);
   tr.mesh.material.color.setHex(color||0xffcf7a);
+  /* Above 1.0 on purpose when asked. The bright pass thresholds at 0.95 and a
+     tracer at its normal colour writes 0.827, so nothing the beam does has ever
+     bloomed. MeshBasicMaterial stores and writes an unclamped colour, so no new
+     material is needed for this. */
+  if (gain && gain !== 1){
+    const c = tr.mesh.material.color;
+    c.setRGB(c.r*gain, c.g*gain, c.b*gain);
+  }
   tr.mesh.material.opacity = 0.95;
   tr.mesh.visible = true;
   tr.w = width||1;
@@ -4898,7 +5113,7 @@ const WICONS = [
 /* How many hostiles hold the yard, chosen from the start screen. Patrol routes
    are generated to match, so this is a free-running number rather than an index
    into a fixed table. G.total holds what actually spawned. */
-const ENEMY_MIN = 10, ENEMY_MAX = 100, ENEMY_DEFAULT = 25;
+const ENEMY_MIN = 10, ENEMY_MAX = 200, ENEMY_DEFAULT = 25;
 let enemyCount = ENEMY_DEFAULT;
 /* Callsigns, in order. Past the end of the list they repeat with a numeric
    suffix — VIPER-2, GHOST-2 — which stays unique to a hundred and still fits
@@ -5379,6 +5594,7 @@ function spawnEnemies(){
          actually fighting. */
       seesPlayer:false, seesTgt:false, losTimer2:0,
       lostTgt:0,                   // seconds since he last saw whoever he is fighting
+      imperioAtEnd:false,          // snapshot for the debrief, latched by endGame
     };
     parts.hbHead.userData = {enemy:e, part:'head'};
     parts.hbBody.userData = {enemy:e, part:'body'};
@@ -6669,6 +6885,13 @@ const _tmpAim = new THREE.Vector3();
  */
 const MAX_SHOOTERS = 2;
 const SHOOTERS_DARK_LO = 7, SHOOTERS_DARK_HI = 10;
+/* The ramp's own reference, deliberately NOT ENEMY_MAX. ENEMY_MAX was the
+   denominator, so raising the garrison ceiling silently stretched the curve and
+   weakened every existing round: measured, the dark lord's cap fell from 10 to 8
+   at a hundred hostiles and from 8 to 7 at the default twenty-five. Neither is a
+   setting the player changed. Pinning the ramp here keeps 10..100 identical to
+   what it always was and makes anything above 100 a separate decision. */
+const SHOOTERS_REF = 100;
 /* Imperio's share of the same accounting. IMPERIO_SHOOTERS is how many men will
    turn on one exposed puppet; TOTAL_SHOOTERS is the ceiling across the whole
    yard, player's attackers included, and it exists because per-puppet caps with
@@ -6676,8 +6899,10 @@ const SHOOTERS_DARK_LO = 7, SHOOTERS_DARK_HI = 10;
    spread over more fights. */
 const IMPERIO_SHOOTERS = 3;
 const TOTAL_SHOOTERS = 13;
-/* How long a man stays yours, how often he reconsiders who to shoot, and how far
-   the news travels when he is caught doing it. */
+/* Imperio does not lapse. IMPERIO_TIME is the value the field is parked at for
+   the rest of the man's life rather than a duration — kept as a number, and kept
+   above 1.2, because the silhouette pass reads it as a fade and a smaller flag
+   value would dim every puppet in the yard forever. */
 const IMPERIO_TIME = 26;
 const IMPERIO_RETARGET = 1.6;
 /* how long he tries for a man he cannot see before looking for a better one */
@@ -6685,7 +6910,7 @@ const IMPERIO_BLIND = 4.0;
 const EXPOSE_RADIUS = 26;
 function maxShooters(){
   if (!isDark()) return MAX_SHOOTERS;
-  const t = clamp((G.total - ENEMY_MIN) / Math.max(1, ENEMY_MAX - ENEMY_MIN), 0, 1);
+  const t = clamp((G.total - ENEMY_MIN) / Math.max(1, SHOOTERS_REF - ENEMY_MIN), 0, 1);
   return Math.round(lerp(SHOOTERS_DARK_LO, SHOOTERS_DARK_HI, t));
 }
 let _sweepAt = 0;
@@ -6721,21 +6946,29 @@ function updateCombatDirector(){
      drops back onto his patrol loop and the round turns into hide-and-seek
      against a clock. Once the squad is nearly gone the survivors keep getting
      re-tasked onto the player's rough position until somebody finds him. */
+  /* How many men in this yard are still against you. Counted every frame rather
+     than inside the throttled block below, because the round now ends on it and
+     a six-second gate would notice up to six seconds late. */
+  let free = 0;
+  for (const e of enemies) if (!e.dead && !(e.imperio > 0)) free++;
+  /* The objective, honestly stated.
+     "Kill everyone" was only ever a proxy for "leave nobody who opposes you",
+     and Imperio is what separates the two. A charm no longer lapses, so a yard
+     whose survivors are all yours has no route to the old win check: G.kills
+     stops one short of G.total and there is no clock in this game. This is the
+     terminator, and the win title the mode already prints — THE YARD IS YOURS —
+     is the one this condition actually describes.
+     Operator mode cannot reach it early: nothing there ever sets imperio, so
+     free is the living count and free===0 means the same thing the kill check
+     already meant. endGame is idempotent, so a duplicate call is free. */
+  if (G.running && !G.over && G.started && free === 0 && enemies.length > 0){
+    endGame(true);
+    return;
+  }
   if (G.running && perfNow > _sweepAt){
     /* Puppets do not count toward "nearly gone". They are not hunting you, so
        three of them plus one hostile would otherwise never trip the sweep and
-       the last real soldier would go back to walking his route.
-
-       Nothing forces a charm to end here. The round terminates on its own: a
-       charm expires on its own clock in updateEnemy whether or not anybody is
-       shooting, puppets left alone in the yard fight each other, and their kills
-       count toward the objective like any other. An earlier version force-freed
-       every puppet the moment no un-charmed man was left, which both contradicts
-       the rule that they turn on each other and — because this block only
-       re-arms its own timer inside the branch below — fired on every single
-       frame, emptying and refilling the charm faster than anyone could aim. */
-    let free = 0;
-    for (const e of enemies) if (!e.dead && !(e.imperio > 0)) free++;
+       the last real soldier would go back to walking his route. */
     if (free > 0 && free <= 3){
       _sweepAt = perfNow + 6000;
       for (const e of enemies){
@@ -6847,13 +7080,18 @@ function updateEnemy(e, dt){
      were rewritten to avoid.
 
      And here rather than in updateSpells, for two reasons: updateSpells runs
-     outside the round-is-live check, so the charm would burn down on the pause
-     screen, and it is fed real time while this loop is fed the dilated clock, so
-     apparating would spend three seconds of curse for every one of combat. */
+     outside the round-is-live check, so the charm would run down on the pause
+     screen, and it is fed real time while this loop is fed the dilated clock.
+
+     The charm does not run down at all any more — it holds until he dies. What
+     that costs is the round's old terminator: a yard of nothing but puppets used
+     to free itself when the last charm lapsed. The combat director now ends the
+     round the moment no un-charmed man is left standing, which is the honest
+     generalisation of the objective anyway. IMPERIO_TIME survives as the stored
+     value rather than a countdown, and it has to stay above 1.2 because the
+     silhouette reads it as a fade. */
   if (e.imperio > 0){
-    e.imperio -= dt;
-    if (e.imperio <= 0){ uncharm(e); }
-    else {
+    {
       e.impRetgt -= dt;
       const cur = e.impTgt;
       /* Re-pick on a cadence and whenever the man he was fighting is gone. The
@@ -6883,7 +7121,7 @@ function updateEnemy(e, dt){
           e.lostTgt = 0; e.seesTgt = false;
         }
       }
-      if (e.imperio > 0){ e.state = ST.COMBAT; e.alerted = true; }
+      e.state = ST.COMBAT; e.alerted = true;
     }
   }
 
@@ -6922,7 +7160,13 @@ function updateEnemy(e, dt){
   e.losTimer -= dt;
   if (e.losTimer<=0){
     e.losTimer = 0.13 + Math.random()*0.06;
-    const see = hasLOS(e, TGT_PLAYER);
+    /* Skipped entirely for a charmed man. Every consumer of seesPlayer is dead
+       for him — the director skips puppets, the reveal tint uses it only in the
+       un-charmed branch, the minimap is already red because the charm forces
+       alerted every frame, and the two de-alert fuses are gated on his target
+       being the player, which it never is. That ray was half the cost of a yard
+       full of puppets: updateEnemy measured 12.0ms -> 5.5ms at a hundred charmed. */
+    const see = (e.imperio > 0) ? false : hasLOS(e, TGT_PLAYER);
     if (see && !e.seesPlayer && e.state===ST.PATROL && _tgtIsPlayer){
       e.state = ST.ALERT;
       e.reactT = rand(0.30,0.80);          // human reaction delay
@@ -7297,6 +7541,9 @@ function updateEnemy(e, dt){
   if (!e.gunDropped){
     p.gun.position.set(lerp(0.14,0.10,cb), lerp(-0.30,-0.05,cb), lerp(-0.20,-0.26,cb));
     p.gun.rotation.set(lerp(-0.42,0,cb), lerp(-0.16,0,cb), lerp(0.20,0,cb));
+    /* rearmRifle may have hidden it while a hold owned his pose; this block only
+       runs once nothing does, so it is the right place to give it back */
+    if (!p.gun.visible) p.gun.visible = true;
   }
   p.rig.rotation.x = lerp(0, e.aimPitch, cb);
   p.head.rotation.x = lerp(0, e.aimPitch*0.5, cb);
@@ -7829,6 +8076,7 @@ const SP = {
   acd:Object.create(null),     // per-ability cooldown remaining, by id
   acdMax:Object.create(null),  // and the span it was set from, for the HUD wipe
   emberFlash:0,
+  akFlash:0,                   // the killing curse's screen response, decays in frame()
   protego:false, protegoK:0, protegoFlash:0,
   qDown:false, trailT:0, trailPrev:new THREE.Vector3(),
   crucioOn:null, crucioT:0,    // the man currently being tortured, and audio cadence
@@ -7840,6 +8088,7 @@ const SP = {
   qHeld:0, qFired:false,       // tap-versus-hold discrimination on the apparate key
   horcrux:true, reforming:0,
   revealT:0, pulseR:0, pulseAt:0, pulseSpawn:0,
+  pulseCx:0, pulseCz:0,        // where the Revelio wave was cast from, latched
   regenT:0,
   casts:0, unforgivable:0,     // debrief counters
   crucioAccum:0, crucioTick:0  // Crucio damage banked between ticks
@@ -7880,6 +8129,45 @@ function dropRifle(e, force){
   e.gunVel = new THREE.Vector3(rand(-2.2,2.2)*f, rand(1.4,3.4)*f, rand(-2.2,2.2)*f);
   e.gunAV  = new THREE.Vector3(rand(-11,11),rand(-11,11),rand(-11,11));
 }
+/**
+ * Put a dropped rifle back in a man's hands. The exact inverse of dropRifle.
+ *
+ * `add`, never `attach`: attach preserves the world transform, which at this
+ * point is the rifle lying on the concrete twenty metres away. The carry pose
+ * rewrites position and rotation every frame once gunDropped is false, but it
+ * never writes scale, and scene.attach leaves a decomposed 0.9999999999999999
+ * there — so scale is reset by hand.
+ *
+ * The teleport bug this could reintroduce (a living disarmed man's rifle dragged
+ * to the middle of the yard, because the carry pose kept writing local
+ * coordinates onto a world-space object) needs gun.parent === scene AND
+ * gunDropped === false at the same time. Reparenting on the line above the flag
+ * is what makes that pair unreachable.
+ */
+function rearmRifle(e){
+  if (!e.gunDropped) return;
+  const p = e.p;
+  p.rig.add(p.gun);
+  p.gun.scale.set(1,1,1);
+  /* seat it at the carry pose for his current stance, so it does not appear at
+     the world coordinates attach left behind for the one frame before the pose
+     block runs */
+  const cb = e.combatBlend || 0;
+  p.gun.position.set(lerp(0.14,0.10,cb), lerp(-0.30,-0.05,cb), lerp(-0.20,-0.26,cb));
+  p.gun.rotation.set(lerp(-0.42,0,cb), lerp(-0.16,0,cb), lerp(0.20,0,cb));
+  /* A hold owns the pose outright and returns before the carry block runs, so a
+     rifle restored to a hoisted or convulsing man hangs a full rifle-length out
+     of his glove until the hold ends. Hide it until he is his own shape again. */
+  p.gun.visible = !(e.levit > 0 || e.tortured > 0 || e.frozen > 0);
+  e.gunDropped = false;
+  e.disarmed = false;
+  e.gunVel = null;
+  e.gunAV = null;
+  /* dropRifle parked fireT at 999 — sixteen minutes — and zeroed the burst. Both
+     have to come back or he stands there holding a rifle he never fires. */
+  e.fireT = 0; e.burst = 0; e.suppress = 0;
+}
+
 /**
  * Break whatever hold is currently on a man, restoring the puppet as it goes.
  *
@@ -7927,24 +8215,98 @@ function castKillingCurse(){
   const dir = castDir(new THREE.Vector3());
   const muzzle = camera.position.clone().addScaledVector(dir, 0.55);
   muzzle.y -= 0.10;
-  fxCurseBeam(muzzle, t.point, sp.hex, 2.6, 22);
-  SFX.killingCurse();
+  /* ---- the bolt ----
+     Three concentric tracers rather than one. The lever here is RADIUS, not
+     brightness: the shipped beam was 0.036m thick, which at this field of view
+     subtends one pixel at nine metres and none at twenty — measured at zero
+     pixels painted, at every gain and every distance. A brighter sub-pixel line
+     is still a sub-pixel line, and the bright pass downsamples by four before it
+     ever sees it. So: a wide soft sheath, a solid core, and a white-hot filament,
+     the outer two carrying gain above 1.0 so they finally clear the bloom
+     threshold. */
+  const dist = muzzle.distanceTo(t.point);
+  spawnTracer(muzzle, t.point, 0x2fbf46, 10.0, 1.15);    // outer glow, 0.14m
+  spawnTracer(muzzle, t.point, sp.hex,    5.5, 1.50);    // body, 0.077m
+  spawnTracer(muzzle, t.point, 0xe6ffe9,  2.2, 1.90);    // filament
+  /* fxCurseBeam's spark shower, inlined. Calling it outright would also spend a
+     third of the five spell-light slots on a redundant flash and lay a fourth,
+     sub-pixel-wide tracer over the three above. */
+  {
+    const col = hexToRGB(sp.hex);
+    _dlA.subVectors(t.point, muzzle);
+    const len = _dlA.length();
+    if (len > 0.3){
+      _dlA.divideScalar(len);
+      for (let i=0;i<34;i++){
+        const k = Math.random()*len;
+        spawnParticle(PS_SPARK, muzzle.x+_dlA.x*k, muzzle.y+_dlA.y*k, muzzle.z+_dlA.z*k,
+          rand(-2.8,2.8), rand(-1.2,3.0), rand(-2.8,2.8),
+          {color:col, size:rand(0.035,0.065), life:rand(0.12,0.46), drag:2.2, grav:-3.5});
+      }
+    }
+  }
+  SFX.killingCurse(clamp((t.point.x-camera.position.x)/14,-1,1), dist);
   /* The green flash has to happen at both ends or the beam looks like it was
-     drawn rather than fired. */
-  spellLight(muzzle, sp.hex, 14, 0.18);
+     drawn rather than fired.
+
+     These two lights ARE the flash — measured, switching them off drops the frame
+     straight back to its unlit luminance, because they are the only part of this
+     spell that reaches the bright pass at all. Which is exactly why they are NOT
+     the thing to raise: at 40 and 26 they took half the frame over the hot
+     threshold and the yard vanished into a milky green wash for two frames, which
+     reads as a bug rather than as power. Held near their original values, the
+     flash is as bright as it ever was and the upgrade is spent on the bolt, which
+     was genuinely invisible before. Still exactly two, and still out of the
+     existing five-slot ring: another PointLight would recompile every lit
+     material in the scene, operator mode included. */
+  spellLight(muzzle, sp.hex, 15, 0.30);
+  spellLight(t.point, sp.hex, 10, 0.34);
+  /* the wand itself lives in a separate scene rendered after a depth clear, with
+     its own lights, so without this the yard flashes green and the thing casting
+     the curse does not change at all. Already counted in that scene's light
+     budget, so it costs nothing. */
+  vmMuzzleLight.color.copy(sRGB(sp.hex));
+  vmMuzzleLight.intensity = 5.5;
+  /* The screen response, decayed in frame(). Half strength rather than full:
+     measured through the real post chain, a peak of 1.0 takes mean frame
+     luminance from 0.269 to 0.578 — the yard disappears into a milky green wash
+     for two frames. This is a tint on top of a flash that is already bright, not
+     the flash itself: measured, 0.15 keeps mean frame luminance level with the
+     spell as it originally shipped while pushing the green bias hard. */
+  SP.akFlash = 0.15;
+  player.shake = Math.min(1.6, player.shake + 0.34);
+  player.fovKick = Math.min(3.2, player.fovKick + 1.5);
   if (t.enemy){
     /* No falloff, no headshot multiplier, no armour: the whole point of the
        curse is that none of that applies to it. Routed through damageEnemy at a
        lethal number rather than setting hp to zero directly, so the kill feed,
        the alert and the win check all fire on their normal paths. */
     damageEnemy(t.enemy, 1e4, false, dir, t.point);
-    for (let i=0;i<26;i++)
+    /* the burst off the body: a tight sheet of sparks along the beam axis plus a
+       ring thrown outward, so it reads as something leaving him rather than a
+       puff at a point */
+    for (let i=0;i<34;i++)
       spawnParticle(PS_SPARK, t.point.x, t.point.y, t.point.z,
-        rand(-3.4,3.4), rand(-1,4), rand(-3.4,3.4),
-        {color:hexToRGB(sp.hex), size:rand(0.035,0.07), life:rand(0.25,0.7), drag:1.7, grav:-5});
+        rand(-4.6,4.6), rand(-1.4,5.5), rand(-4.6,4.6),
+        {color:[0.36,1.9,0.46], size:rand(0.04,0.09), life:rand(0.3,0.85), drag:1.6, grav:-5});
+    for (let i=0;i<18;i++){
+      const a = Math.random()*PI*2, r = 5.5 + Math.random()*5;
+      spawnParticle(PS_SPARK, t.point.x, t.point.y-0.1, t.point.z,
+        Math.cos(a)*r, rand(-0.6,1.2), Math.sin(a)*r,
+        {color:[0.22,1.3,0.34], size:rand(0.03,0.055), life:rand(0.25,0.6), drag:2.4, grav:-6});
+    }
+    /* and a low shroud of dark smoke where he stood. Budgeted by density rather
+       than by pool fraction: the darkness of smoke is entirely in the overlap, so
+       a handful of large sprites in a small volume reads far heavier than three
+       times as many spread out. */
+    fxSmoke(t.point.x, t.point.y-0.6, t.point.z, 9, 0.42, 1.1, 0.34);
     SP.unforgivable++;
   } else {
     fxImpactWall(t.point, dir.clone().negate(), t.dist);
+    for (let i=0;i<16;i++)
+      spawnParticle(PS_SPARK, t.point.x, t.point.y, t.point.z,
+        rand(-3.2,3.2), rand(0,4), rand(-3.2,3.2),
+        {color:[0.30,1.5,0.40], size:rand(0.03,0.06), life:rand(0.2,0.5), drag:2.0, grav:-6});
   }
   /* the loudest thing in the game. A killing curse brings the yard. */
   alertToMagic(sp.noise, 0.85);
@@ -8176,19 +8538,30 @@ function castImperio(){
   const muzzle = camera.position.clone().addScaledVector(_dlA, 0.5);
   if (!t.enemy) return false;
   const e = t.enemy;
-  /* A man with no rifle is no use to you, and worse, the failure is silent:
-     `disarmed` is set by four different spells and cleared nowhere, and the
-     combat director drops disarmed men before they can ever be cleared to fire.
-     Charming one buys a puppet who jogs around executing tactics forever without
-     firing a shot, with nothing on screen to say why. Refusing costs the reduced
-     cooldown a miss costs, and reads as the spell declining rather than failing. */
-  if (e.gunDropped || e.disarmed) return false;
-  if (e.imperio > 0) return false;                    // already yours
+  /* A disarmed man used to be refused outright, because `disarmed` is set by four
+     different spells, cleared nowhere, and the combat director drops disarmed men
+     before they can ever be cleared to fire — so charming one bought a puppet who
+     jogged around executing tactics forever without firing a shot, with nothing on
+     screen to say why. Refusing was legible but it is not what the spell should
+     do. Taking a man now gives him his rifle back.
+
+     Which also has to work on a man who is ALREADY yours: with the charm
+     permanent, Expelliarmus or Crucio on your own puppet would otherwise bench
+     him for the rest of the round — the same silent failure, moved. */
+  if (e.imperio > 0){
+    if (!e.gunDropped && !e.disarmed) return false;   // already yours and already armed
+    rearmRifle(e);
+    return true;
+  }
   _dlB.set(e.obj.position.x, e.obj.position.y + 1.2, e.obj.position.z);
   fxCurseBeam(muzzle, _dlB, a.hex, 1.8, 18);
   SFX.imperio(clamp((e.obj.position.x-camera.position.x)/14,-1,1));
   spellLight(_dlB, a.hex, 7, 0.3);
+  /* Stored, not counted down. It stays at IMPERIO_TIME for the rest of his life
+     because the silhouette reads this value as a fade and anything below 1.2
+     would dim every puppet in the yard permanently. */
   e.imperio = IMPERIO_TIME;
+  rearmRifle(e);
   e.impTgt = pickPuppetTarget(e);
   e.impRetgt = IMPERIO_RETARGET;
   e.exposed = false;
@@ -8211,29 +8584,9 @@ function castImperio(){
   return true;
 }
 
-/** Hand a man back his own mind. */
-function uncharm(e){
-  if (!(e.imperio > 0) && !e.impTgt && !e.exposed) return;
-  e.imperio = 0;
-  e.impTgt = null;
-  e.exposed = false;
-  e.burst = 0; e.suppress = 0; e.engage = 0;
-  e.losTimer = 0; e.losTimer2 = 0; e.cover = null; e.tacticT = 0;
-  e.tag.setCharm(false);
-  /* everyone who was hunting him stops — the curse lifting is the end of it, and
-     a squad that kept shooting a man who is theirs again reads as a bug */
-  for (const o of enemies) if (o.impHunter === e) o.impHunter = null;
-  if (!e.dead){
-    e.state = ST.COMBAT; e.alerted = true;
-    e.lastSeen = 3.0;                    // stale: he has to find you again
-    comms(e, pick(['MY HEAD — WHAT WAS THAT','I DO NOT REMEMBER, I DO NOT REMEMBER',
-                   'SOMETHING WAS IN MY HEAD']), true);
-    for (let i=0;i<10;i++)
-      spawnParticle(PS_SPARK, e.obj.position.x+rand(-0.3,0.3), e.obj.position.y+rand(1.0,1.8),
-        e.obj.position.z+rand(-0.3,0.3), rand(-0.7,0.7), rand(0.1,1.0), rand(-0.7,0.7),
-        {color:[0.6,0.22,1.0], size:0.04, life:rand(0.3,0.7), drag:2.8, grav:-2});
-  }
-}
+/* There is no uncharm. A man under Imperio is under it until he dies — the state
+   is cleared in exactly three places, all of which are teardown rather than
+   recovery: killEnemy, applyMode and endGame. */
 
 /**
  * A puppet has just put a round into one of his own. That is the moment the
@@ -8284,6 +8637,7 @@ const REVEAL_SPEED = 46, REVEAL_HOLD = 5.0;
 function castRevelio(){
   SP.pulseR = 0.5;
   SP.pulseAt = 0;
+  SP.pulseCx = player.pos.x; SP.pulseCz = player.pos.z;
   SFX.revelio();
   for (const e of enemies) e.pulsed = false;
   spellLight(camera.position, abilityById.revelio.hex, 8, 0.5);
@@ -8335,35 +8689,157 @@ silMesh.visible = false;
 scene.add(silMesh);
 const _silM = new THREE.Matrix4(), _silC = new THREE.Color();
 
+/* ---------------------------------------------------------------------------
+   The Revelio shockwave.
+
+   A ring on the concrete, driven from the same SP.pulseR that decides which men
+   the wave has reached — same function, same frame, so the two cannot drift.
+   Before this the only marker was four sparks every 50ms, which is nothing once
+   the wave is thirty metres out.
+
+   The band is placed in the vertex shader from a radius uniform rather than by
+   scaling a unit ring: uniform scale grows the band along with the radius and
+   the ring turns into a filling disc. And the width has to grow in SCREEN terms
+   or the far half of the sweep is invisible — a fixed 2.2m band measured 17,000
+   pixels at R=6 and zero at R=60, which is precisely where the men you were
+   looking for get lit up.
+   --------------------------------------------------------------------------- */
+const RING_SEG = 128;
+function makeRevelioRing(y){
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array((RING_SEG+1)*2*3);
+  const side = new Float32Array((RING_SEG+1)*2);
+  const dir  = new Float32Array((RING_SEG+1)*2*2);
+  const idx = [];
+  for (let i=0;i<=RING_SEG;i++){
+    const a = (i/RING_SEG)*PI*2, cx = Math.cos(a), cz = Math.sin(a);
+    for (let k=0;k<2;k++){
+      const v = i*2+k;
+      side[v] = k ? 1 : -1;
+      dir[v*2] = cx; dir[v*2+1] = cz;
+    }
+    if (i < RING_SEG){
+      const a0=i*2, a1=i*2+1, b0=(i+1)*2, b1=(i+1)*2+1;
+      idx.push(a0,b0,a1, a1,b0,b1);
+    }
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));   // written in the shader
+  geo.setAttribute('aSide', new THREE.BufferAttribute(side,1));
+  geo.setAttribute('aDir', new THREE.BufferAttribute(dir,2));
+  geo.setIndex(idx);
+  /* The computed bounding sphere would be a zero-radius point at the origin,
+     because every real position is generated in the vertex shader. frustumCulled
+     is off, and this sphere is the belt for that braces — delete the flag and the
+     ring would silently never draw again. */
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
+  const mat = new THREE.ShaderMaterial({
+    uniforms:{
+      uR:{value:0}, uCentre:{value:new THREE.Vector2()}, uWidth:{value:2.2},
+      uY:{value:y}, uAmp:{value:1.0}, uFog:{value:0.0},
+      uClip:{value:new THREE.Vector4(-1e6,-1e6,1e6,1e6)}
+    },
+    vertexShader:`
+      attribute float aSide; attribute vec2 aDir;
+      uniform float uR, uWidth, uY;
+      uniform vec2 uCentre;
+      varying float vE;        // -1 inner .. +1 outer
+      varying vec2 vXZ;
+      varying float vD;
+      void main(){
+        vE = aSide;
+        float r = max(0.0, uR + aSide*uWidth*0.5);
+        vec3 p = vec3(uCentre.x + aDir.x*r, uY, uCentre.y + aDir.y*r);
+        vXZ = p.xz;
+        vec4 mv = modelViewMatrix * vec4(p,1.0);
+        vD = -mv.z;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader:`
+      precision highp float;
+      uniform float uAmp, uFog;
+      uniform vec4 uClip;
+      varying float vE; varying vec2 vXZ; varying float vD;
+      void main(){
+        if (vXZ.x < uClip.x || vXZ.y < uClip.y || vXZ.x > uClip.z || vXZ.y > uClip.w) discard;
+        /* a soft crest rather than a hard line. The exponent is deliberately low:
+           a sharp spike reads as a wire and measured half the perceived weight of
+           a flatter one at the same amplitude. */
+        float t = 1.0 - abs(vE);
+        float crest = pow(clamp(t, 0.0, 1.0), 1.6);
+        /* the ring is the only thing in the frame a raw ShaderMaterial does not
+           fog, so the same exponential the contact shadows use is folded in here */
+        float fog = exp(-vD*vD*uFog*uFog);
+        float a = crest * uAmp * fog;
+        if (a <= 0.004) discard;
+        gl_FragColor = vec4(vec3(0.42, 1.0, 0.56) * a, a);
+      }`,
+    transparent:true, depthWrite:false, depthTest:true,
+    side:THREE.DoubleSide, blending:THREE.AdditiveBlending,
+    polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-3,
+    fog:false
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.frustumCulled = false;
+  m.renderOrder = 2;
+  m.visible = false;
+  scene.add(m);
+  return m;
+}
+/* 30mm off the deck clears every near-ground layer by a comfortable margin
+   against the worst-case depth step at the far plane */
+const revelioRing = makeRevelioRing(0.03);
+/* The warehouse deck is 4.42m up and 94.8% of the yard is not, so one flat ring
+   is right for the ground and simply absent for a player standing on the deck —
+   measured zero pixels up there, looking out or down. This is the copy that makes
+   the feature exist on that floor, clipped to the deck's own footprint. */
+const revelioRingDeck = makeRevelioRing(4.45);
+revelioRingDeck.material.uniforms.uClip.value.set(-29, -15, -14, 6);
+
 function updateReveal(dt){
+  /* Hoisted out of the block below on purpose. Inside it the predicate is true by
+     construction and the terminator is its last statement, so a write in there
+     latches visible=true for good — which showed up as a permanent 127-metre ring
+     that re-stranded itself at a new centre on every cast. */
+  const ringOn = SP.pulseR > 0;
+  revelioRing.visible = ringOn;
+  revelioRingDeck.visible = ringOn &&
+    groundAt(player.pos.x, player.pos.z, player.pos.y + 0.2) > 2;
   /* the shell itself */
   if (SP.pulseR > 0){
     SP.pulseR += REVEAL_SPEED*dt;
     const R = SP.pulseR;
-    /* A thin ring of motes marks where the wave is. Rate-limited to a wall-clock
-       cadence rather than seven per frame: the shell runs for 2.8 seconds, so at
-       frame rate that was well over a thousand particles into a 360-slot pool —
-       it lapped itself repeatedly and starved every other spark effect in the
-       game, muzzle flashes and impacts included, for the whole sweep. */
-    SP.pulseSpawn -= dt;
-    if (SP.pulseSpawn <= 0){
-      SP.pulseSpawn = 0.05;
-      for (let i=0;i<4;i++){
-        const a = Math.random()*PI*2;
-        spawnParticle(PS_SPARK, player.pos.x+Math.cos(a)*R, rand(0.1,1.3), player.pos.z+Math.sin(a)*R,
-          0, rand(0.2,1.0), 0,
-          {color:[0.62,1.0,0.70], size:0.05, life:0.5, drag:3, grav:0.2, alpha:0.9});
-      }
+    /* The wave left a place; it does not follow you. Sprinting through a sweep
+       dragged the centre 21.8m sideways, which nothing showed while the only
+       marker was a handful of sparks and which is glaring once it is a ring on
+       the ground. Latched at the cast and read by both the ring and the tick
+       test below, so they cannot disagree. */
+    const cx = SP.pulseCx, cz = SP.pulseCz;
+    for (const rm of [revelioRing, revelioRingDeck]){
+      const u = rm.material.uniforms;
+      u.uR.value = R;
+      u.uCentre.value.set(cx, cz);
+      /* width in screen terms, not world: a band that is constant in metres
+         subtends fewer and fewer pixels as it travels, and is gone by the time it
+         reaches the men at the fence */
+      u.uWidth.value = 2.2 + R*0.055;
+      u.uAmp.value = 0.95;
+      u.uFog.value = scene.fog ? scene.fog.density : 0;
     }
     for (const e of enemies){
       if (e.dead || e.pulsed) continue;
-      const d = Math.hypot(e.obj.position.x-player.pos.x, e.obj.position.z-player.pos.z);
+      const d = Math.hypot(e.obj.position.x-cx, e.obj.position.z-cz);
       if (d > R) continue;
       e.pulsed = true;
       e.revealed = REVEAL_HOLD;
       SFX.revealPing(clamp((e.obj.position.x-camera.position.x)/18,-1,1), d);
     }
-    if (R > HALF*3) SP.pulseR = 0;
+    if (R > HALF*3){
+      SP.pulseR = 0;
+      /* hidden here as well as at the top of the function, so the ring does not
+         survive on screen for the one frame between the sweep ending and the
+         next call noticing */
+      revelioRing.visible = false; revelioRingDeck.visible = false;
+    }
   }
 
   /* One instance set per man, whether he is lit by Revelio, charmed, or both.
@@ -9867,6 +10343,10 @@ function applyMode(m){
   SP.smokeFlight = 0; SP.appear = 0; SP.reforming = 0; SP.veil = 0;
   SP.pulseR = 0; SP.crucioOn = null; SP.flying = false;
   silMesh.count = 0; silMesh.visible = false;
+  /* and the ring. All three of these clear SP.pulseR from OUTSIDE updateReveal,
+     and updateSpells returns early in operator mode, so nothing would ever run
+     again to notice — measured as 12% of an operator frame painted green. */
+  revelioRing.visible = false; revelioRingDeck.visible = false;
   /* The mode buttons on the start screen call this with the previous round's
      squad still standing in the yard, and no reset follows. A charmed man left
      in that array would keep his violet plate and be re-lit by updateReveal on
@@ -9876,8 +10356,14 @@ function applyMode(m){
     e.imperio = 0; e.impTgt = null; e.impHunter = null; e.exposed = false;
     e.tag.setCharm(false);
   }
-  for (const s of SPELL_LIGHTS){ s.t = 0; s.l.intensity = 0; }
+  /* visible too, not just intensity. The only writer of visible=false is inside
+     updateSpellLights' `if (s.t <= 0) continue;` guard, so setting t=0 here made
+     that line unreachable and left the light counted forever: WebGLLights counts
+     visible lights, and NUM_POINT_LIGHTS is baked into every lit shader in the
+     scene. Measured 7 -> 12 after a round with Crucio held, and it never healed. */
+  for (const s of SPELL_LIGHTS){ s.t = 0; s.l.intensity = 0; s.l.visible = false; }
   compMat.uniforms.veil.value = 0;
+  compMat.uniforms.ak.value = 0; SP.akFlash = 0;
 
   updateModeUI(dark);
   updateVitalsUI();
@@ -9902,6 +10388,11 @@ function updateModeUI(dark){
 
 function resetWorldState(){
   applyMode(gameMode);
+  /* Give the pixels back. A heavy round can ratchet the resolution floor down
+     permanently, and because that state lives in a closure nothing here used to
+     touch it — a single 200-man round left dynamic resolution disabled for the
+     rest of the session, including every later operator round. */
+  adaptive.reset();
   for (const w of WEAPONS){ w.mag=w.magSize; w.res=w.reserve; w.spread=w.spreadBase; w.semi=false;
                             w.vm.group.visible=false; }
   player.pos.set(SPAWN.x,0,SPAWN.z); player.vel.set(0,0,0);
@@ -9988,8 +10479,10 @@ function resetWorldState(){
   SP.crucioAccum=0; SP.crucioTick=0;
   protegoMesh.visible=false;
   silMesh.count=0; silMesh.visible=false;
-  for (const s of SPELL_LIGHTS){ s.t=0; s.l.intensity=0; }
+  revelioRing.visible=false; revelioRingDeck.visible=false;
+  for (const s of SPELL_LIGHTS){ s.t=0; s.l.intensity=0; s.l.visible=false; }
   compMat.uniforms.veil.value=0;
+  compMat.uniforms.ak.value=0; SP.akFlash=0;
 
   UI.killCount.textContent='0';
   refreshCountUI(G.total);          // what actually spawned, not what was asked for
@@ -10028,11 +10521,19 @@ function endGame(win){
   SP.timeScale = 1; SP.appear = 0; SP.reforming = 0;
   protegoMesh.visible = false;
   silMesh.count = 0; silMesh.visible = false;
+  /* and the ring. All three of these clear SP.pulseR from OUTSIDE updateReveal,
+     and updateSpells returns early in operator mode, so nothing would ever run
+     again to notice — measured as 12% of an operator frame painted green. */
+  revelioRing.visible = false; revelioRingDeck.visible = false;
   /* the reveal timers have to go too, or updateReveal rebuilds the silhouettes
      on the very next frame and they hang over the debrief */
   for (const e of enemies){
     e.revealed = 0; e.pulsed = false;
-    /* and the charm, for exactly the same reason the line above exists —
+    /* Remembered before it is cleared: the debrief below counts men turned as
+       well as men killed, and the clear on the next line is what would otherwise
+       make that count zero. */
+    e.imperioAtEnd = e.imperio > 0;
+    /* and the charm, for exactly the same reason the reveal clear exists —
        updateSpells runs outside the round-is-live check, so a charmed man would
        be re-lit violet over the debrief on the very next frame */
     e.imperio = 0; e.impTgt = null; e.impHunter = null; e.exposed = false;
@@ -10042,6 +10543,7 @@ function endGame(win){
   SP.protego = false; SP.protegoK = 0; SP.veil = 0;
   SP.qDown = false; SP.qHeld = 0; SP.qFired = false;
   compMat.uniforms.veil.value = 0;
+  compMat.uniforms.ak.value = 0; SP.akFlash = 0;
   const dark = isDark();
   const es = UI.endScreen;
   es.classList.remove('hide','win','lose');
@@ -10050,7 +10552,13 @@ function endGame(win){
                                    : (win ? 'SECTOR CLEARED'    : 'KILLED IN ACTION');
   $('endTag').textContent = dark ? (win ? 'THE DARK LORD // SECTOR 7' : 'THE DARK LORD // DENIED')
                                  : (win ? 'MISSION REPORT // SUCCESS' : 'MISSION REPORT // FAILURE');
-  $('sKills').innerHTML = G.kills + `<span>/${G.total}</span>`;
+  /* Killed plus turned, because with Imperio permanent the two together are what
+     ends a round — a yard whose survivors are all yours is won, and a debrief
+     that read "0 / 25 ELIMINATED" under THE YARD IS YOURS would be telling the
+     player he had failed at something he had just finished. */
+  const turned = enemies.reduce((n,e)=> n + ((!e.dead && e.imperioAtEnd) ? 1 : 0), 0);
+  $('sKills').innerHTML = (turned > 0 ? (G.kills + ' + ' + turned) : String(G.kills))
+                        + `<span>/${G.total}</span>`;
   /* accuracy is meaningless when the curses do not miss, so the dark lord's
      report counts what he cast and how much of it was Unforgivable instead */
   if (dark){
@@ -10167,6 +10675,7 @@ function frame(now){
       for (const e of enemies) e.tag.sprite.visible = false;
       /* and any silhouettes the last round left lit, for the same reason */
       if (silMesh.count){ silMesh.count = 0; silMesh.visible = false; }
+      if (revelioRing.visible){ revelioRing.visible = false; revelioRingDeck.visible = false; }
     }
   }
 
@@ -10212,6 +10721,11 @@ function frame(now){
   compMat.uniforms.flash.value= G.killFlash*0.045;
   compMat.uniforms.ab.value   = 0.18;
   compMat.uniforms.veil.value = SP.veil;
+  /* Outside the round-is-live branch and outside isDark(), so it always decays
+     back to zero — including on the frame the player switches to operator mode. */
+  SP.akFlash = damp(SP.akFlash || 0, 0, 5.2, dt);
+  if (SP.akFlash < 0.002) SP.akFlash = 0;
+  compMat.uniforms.ak.value = SP.akFlash;
 
   /* ---------------- render ---------------- */
   renderer.setRenderTarget(sceneRT);
