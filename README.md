@@ -7,21 +7,26 @@ no package manager, and not a single image, audio or model file on disk.
 > — MIT, © StarKnightt. The original game and the five prompts that produced it are entirely
 > upstream's work. This fork doubles the size of the map, adds a configurable garrison size,
 > removes the round timer, generates patrol routes instead of hand-placing them, adds a third
-> air jump and carries more reserve ammunition.
+> air jump, carries more reserve ammunition, and adds a second playable character who does not
+> use guns.
 
 **[Play the original here](https://starknightt.github.io/operation-ironhold/)**
 
 ![Gameplay](screenshots/gameplay.jpg)
 
 A garrison holds a container yard in Sector 7. Clear it. You pick how many are down there —
-anywhere from ten to a hundred — and there is no clock.
+anywhere from ten to two hundred — and there is no clock.
 
-The entire game — renderer setup, world generation, weapon handling, enemy AI, audio
-synthesis, post-processing and HUD — is about 6,500 lines of JavaScript and CSS inlined
-into a single 318 KB `index.html`. The only external resource is three.js r128, pulled
+You also pick *who walks in*. **Operator** is the original game: four weapons, 150 effective
+health, and a fight you can lose. **Dark Lord** is the same yard, the same squad and the same
+props, with a wand instead of a rifle and ten spells instead of four guns.
+
+The entire game — renderer setup, world generation, weapon handling, enemy AI, spellcasting,
+audio synthesis, post-processing and HUD — is about 8,300 lines of JavaScript and CSS inlined
+into a single 406 KB `index.html`. The only external resource is three.js r128, pulled
 from a CDN. Everything else is generated at runtime.
 
-It was built by an AI agent from five prompts, recorded verbatim in
+The original was built by an AI agent from five prompts, recorded verbatim in
 [PROMPTS.md](PROMPTS.md).
 
 ## Running it
@@ -45,6 +50,8 @@ will not play on a phone.
 
 ## Controls
 
+### Operator
+
 | Input | Action |
 | --- | --- |
 | `W` `A` `S` `D` | Move |
@@ -60,23 +67,54 @@ will not play on a phone.
 | Mouse wheel | Cycle weapons |
 | `Esc` | Pause |
 
+### Dark Lord
+
+| Input | Action |
+| --- | --- |
+| `W` `A` `S` `D` | Move |
+| Mouse | Look |
+| Left click | Cast the selected curse |
+| Right click | Hold for Protego |
+| `1` `2` `3` `4` | Avada Kedavra / Bombarda Maxima / Crucio / Sectumsempra |
+| Mouse wheel | Cycle curses |
+| `Q` | Tap to apparate; **hold** to travel as smoke |
+| `E` | Expelliarmus |
+| `F` | Levicorpus |
+| `C` | Petrificus Totalus |
+| `R` | Homenum Revelio |
+| `X` | Imperio |
+| `Space` | Jump; two air hops; **hold** after they are spent to hover |
+| `Esc` | Pause |
+
 ## The round
 
-Eliminate every hostile. The slider on the start screen sets how many, from 10 to 100, and
+Eliminate every hostile. The slider on the start screen sets how many, from 10 to 200, and
 defaults to 25; the value applies to the next round, including `REDEPLOY`. There is no time
 limit — the round ends when the last man is down, or when one of them puts you down.
 
-You start with 100 health and 50 armor, where armor absorbs half of incoming damage until it
-is gone. Neither regenerates and there are no pickups, so the 150 you start with is the whole
-budget however many hostiles you chose.
+As the Operator you start with 100 health and 50 armor, where armor absorbs half of incoming
+damage until it is gone. Neither regenerates and there are no pickups, so the 150 you start
+with is the whole budget however many hostiles you chose.
 
 Hostiles hold fire for the first three seconds so you can get your bearings, and a combat
-director caps the number shooting at you at any one moment to two. The rest keep
-manoeuvring. That single constraint is what keeps a firefight readable instead of
-collapsing into crossfire you cannot answer.
+director caps how many may shoot at any one moment. The rest keep manoeuvring. That single
+constraint is what keeps a firefight readable instead of collapsing into crossfire you
+cannot answer.
+
+For the Operator that cap is two, exactly as the game shipped. It was briefly raised for
+both characters and that was a mistake: it measurably changed the original game, roughly
+doubling incoming damage against a large garrison, which is not something a second campaign
+should do to the first. The Dark Lord scales instead — seven at ten hostiles up to ten at a
+hundred — because with 250 health, a shield and regeneration, two shooters leave him not
+merely safe but unaware anything is happening. That ramp is pinned to its own reference of a
+hundred rather than to the maximum garrison, so raising the ceiling to 200 left every setting
+from 10 to 100 bit-identical instead of quietly stretching the curve and weakening rounds
+nobody had changed.
 
 Dying ends the round. The report screen shows eliminations, headshots, accuracy and time
-survived — the stopwatch still runs, it just is not a limit any more.
+survived — the stopwatch still runs, it just is not a limit any more. The Dark Lord's report
+counts spells cast and kills by Unforgivable Curse instead of headshots and accuracy, because
+a curse does not miss and the accuracy number would always read 100%.
 
 ## Weapons
 
@@ -122,6 +160,193 @@ fully chained triple jump tops out around 2.7m. Holding `Space`
 while airborne near a ledge up to about 1.95m above your feet pulls you up over it, which is
 what gets you onto a container roof from flat ground and onto the sniper deck without the
 ramp.
+
+## Dark Lord
+
+The second character on the start screen. The map does not change, the props do not change and
+the squad does not change — only who is holding the other end of the fight.
+
+He carries 250 health, no armour, a shield, and health that comes back on its own a few
+seconds after the last round that hit him. This is deliberate and it is not subtle: he is
+meant to be the most dangerous thing in the yard, and standing motionless in the open against
+a hundred armed men takes about ten seconds to kill him. Against ten or twenty-five it does
+not kill him at all.
+
+| Key | Spell | What it does |
+| --- | --- | --- |
+| `1` | Avada Kedavra | A three-layer bolt that kills whatever it touches. No falloff, no headshot multiplier, no armour — none of it applies. A flash at both ends, a shroud of smoke where he stood, and the whole frame goes the colour of the curse for a moment. Brings the entire yard down on you. |
+| `2` | Bombarda Maxima | A blast at the aim point: falloff damage in a 6.5m radius, and everyone inside it gets thrown. The containers do not move; the static world is merged and instanced, so there is nothing there to break. |
+| `3` | Crucio | Held, not tapped. He drops his rifle, goes down and screams — and the screaming carries, on the same propagation the gunfire alert uses. Holding a man under it is how you call the rest of the yard to a spot of your choosing. |
+| `4` | Sectumsempra | Seven hitscan samples fanned across the crosshair. Heavy damage plus a bleed that keeps running, and it takes its victims apart — see below. |
+| `Q` | Apparition | Tap and you arrive wherever you are looking, at any distance the yard allows. Hold and you become a low black streak, steerable with the mouse, for as long as you keep holding — and the yard slows to a third of speed around you while you do. |
+| `E` | Expelliarmus | Takes the rifle off him and throws it. He is then unarmed, and reacts accordingly. |
+| `F` | Levicorpus | Hoists him 2.5m into the air, upside down, swinging, for five seconds — then drops him, which hurts. |
+| `C` | Petrificus Totalus | Six seconds rigid. Cheapest thing on the list and one of the most useful. |
+| `R` | Homenum Revelio | An expanding shell that ticks once per soldier it reaches and lights him as a silhouette through the containers for five seconds, with a ring of light racing outward across the concrete ahead of it. |
+| `X` | Imperio | Takes a man and gives him back to the yard pointing the other way. He keeps his rifle, his cover sense and his burst discipline; the only thing that changes is who he is trying to kill. Permanent, unlimited, and undetectable until he draws blood. If he had been disarmed, the curse hands him his rifle back — see below. |
+| RMB | Protego | Held. Blocks everything from a 150-degree frontal arc. |
+
+**Protego is a shield, not a dome.** Every source of damage in the game already funnels through
+one function, so the shield is a single arc test inside it — which means it would cover anything
+added later without being told about it. The one thing it cannot do is stop a round in flight,
+because enemy fire is hitscan and resolved instantly; you get the flare on the shield and the
+damage simply never lands, which reads fine.
+
+**The Horcrux.** Once per round, dying does not end the round. He comes apart, reforms
+somewhere else on the map with 35 health, and every man in the yard feels it. At 250 health
+with a shield you will rarely see it, which is the point.
+
+**Apparition can never land you somewhere illegal, and it can put you on a roof.** The
+destination is clamped inside the fence, resolved to the surface actually being aimed at,
+searched outward for standing room *at that height*, then shoved out of anything still
+overlapping. Deliberately not routed through the reachability check the patrol generator uses:
+that one flood-fills from the player's spawn at ground level, so no container roof or warehouse
+deck is in it, and delegating to it meant a hop aimed at a roof got snapped into the lane beside
+it and blinking while stood on one dropped you off. The test exists to stop a soldier being
+stranded where he cannot walk out, which is not a hazard for someone with a glide and a triple
+jump. Verified at zero bad landings — outside the fence, inside a prop, sunk into the ground, or
+still stuck after a full second of settling physics — across 2,500 blinks, 400 smoke flights and
+300 Horcrux relocations, with 15% of blinks landing above ground level and the highest at 8.2m.
+
+**A blink has no range limit, and the two interesting parts of removing it were not the
+range.** The first is that the aiming ray uses one shared raycaster, and every other spell
+leaves its own reach on it — Petrify a man four metres away and a blink that simply *deleted*
+its cap would inherit 3.55m and go nowhere, until you cast something else. So the reach is
+reassigned rather than removed. That failure is invisible to any test that exercises apparition
+on its own, which is exactly how apparition had been tested.
+
+The second is height. The destination's ground is resolved by a downward probe that is 90m
+long, and the aim height used to be extrapolated along the ray — fine when the ray stopped at
+26m, unbounded once it does not. Looking up 45° from a container stack produced an aim height of
+92m, the probe found no ground at all, the search fell back to y=0, and you were quietly dumped
+off the stack you were standing on into the lane beside it, at full cooldown cost. Measured
+across 2,730 elevated upward blinks: the naive version pushes the aim height to **129.6m and
+fails to find ground in 1,137 of them (42%)**; keeping the height you already had on the
+no-hit branch caps it at **11.8m with zero failures**. A random-stance sweep asserting "the
+destination is unblocked" passes in both cases — the destination *is* unblocked, just at the
+wrong altitude, and there is nothing to compare it against unless you start somewhere high.
+
+The trail keeps its budget. The particle count along a rope is already clamped at 1,500, which
+binds from 25m up, so the fix for a 100m blink is girth rather than count: the tube narrows with
+distance, gathering the same particles into a tighter cord. Raising the count instead would wrap
+the 4,200-slot ring inside a single call and erase the departure plume before a frame was drawn.
+One blink costs 1,892 particles at any distance, and never wraps.
+
+**Imperio.** One man, on `X`, for 26 seconds, and there is no limit on how many you hold at
+once. He keeps everything that made him dangerous — cover selection, flanking, burst discipline,
+reload, the obstacle whiskers — because the implementation does not give him a new brain. It
+generalises the one question the old brain never had to ask: *who am I trying to kill.* Answer
+that with a target rather than an assumption and the entire existing soldier AI becomes the
+puppet AI, unchanged.
+
+Three rules make it a fight rather than a turret:
+
+- **He is undetectable until he draws blood.** The squad walks with him. The moment one of his
+  rounds actually lands on a squadmate — measured at the damage, not at the trigger, so a puppet
+  who misses for five seconds stays anonymous for five seconds — he is exposed, the men within
+  26m turn on him, and somebody says so on the radio. That first callout is the payoff.
+- **Puppets spare each other.** While any un-charmed man is alive a puppet will only ever target
+  an un-charmed man. Only when none are left do they turn on one another.
+- **Their kills are your kills.** Every round routes through the same damage funnel the player's
+  does, so the kill feed, the objective counter and the win check work without knowing Imperio
+  exists. A yard that has run out of un-charmed men still finishes.
+
+The nastiest bug this could have shipped with is not in any of that. `damageEnemy` had no
+dead-check, and a corpse sits at exactly zero health — so one more round takes it negative and
+re-enters `killEnemy`, incrementing the kill counter a second time for the same man. Nothing
+would show on screen; the body is already down and its hitboxes are already gone. Only the
+counter drifts, past the objective, and the round ends in a *win* with men still standing. The
+invariant worth keeping if nothing else survives is that the kill count equals the number of
+corpses — it holds trivially today, which is why nobody writes it down.
+
+A second one, subtler: a soldier's "have I lost contact" timer measures seconds since he last
+saw **the player**, and it is read in four places. Left alone, every puppet more than 73m from
+you — no walls required, that is just the sight range on a 120m diagonal — quietly dropped back
+onto his patrol route seven seconds later with the curse still running, and his nameplate went
+white. The feature worked for precisely as long as you were watching it. Verified fixed with the
+player parked 62-68m away and provably unable to be seen for 1,700 consecutive frames: the
+puppet holds combat, and holds his target, for the full 26 seconds.
+
+**Sectumsempra dismembers.** Head, both arms and both legs come off and tumble away along the
+axis of the cut, with the torso spinning off separately. The pieces are the soldier's *own* rig
+nodes, not stand-ins: `collapseRig` merges meshes by material *within* each group, so head, each
+upper arm and each thigh survive as separate nodes carrying their own merged geometry.
+Reparenting one to the scene costs no new geometry, no new material and — measured — 36 extra
+draw calls across a hundred and eight flying pieces, because those meshes were already being
+drawn individually. A man opened up by the curse who survives and bleeds out ten seconds later
+still comes apart, because the mark rides on him rather than on the cast.
+
+Two things about that were subtle enough to get wrong first time round, and did. A rig node's
+origin is the *joint* it hangs from — a thigh's origin is the hip, and the boot is 0.93m below
+it — so a piece left on that origin pinwheels about one end like a hinge instead of tumbling,
+and a ground test against that origin buries the entire limb before it registers a landing. Both
+are fixed by moving each node onto the piece's own centre as it detaches and pushing its children
+back by the same amount, so the geometry does not move but the pivot does. Resting pieces now sit
+within about 10cm of the surface under them, against a limb-length error before.
+
+**Nothing winds up.** Every spell casts on the frame you press the button; the cooldown is
+the whole cost. Avada Kedavra originally demanded half a second on the button before it would
+fire, on the theory that the signature curse should feel deliberate. In the hand it just felt
+like the spell was arguing with you.
+
+**The smoke is its own system.** Apparition lays down a rope of black along the *whole* path —
+origin to destination for an instant hop, and continuously behind you in flight — rather than
+puffing at the ends. It needed a dedicated particle system: an order of magnitude more live
+particles than blood and dust together, a per-particle seed so two thousand overlapping sprites
+do not read as two thousand identical discs, and its own integrator for the swirl that turns a
+cone of puffs into a curling tendril.
+
+Getting it to look like the films took three passes and the failures are instructive. Large
+sprites laid sparsely are a grey wall up close and a string of gaps at range. Small sprites at
+the same spacing are a swarm of flies. Density and size have to be chosen together so
+consecutive sprites overlap at the spacing used. And the noise that gives each puff its interior
+structure has to be weighted to the *rim*: applied evenly it punches holes through the middle
+too, so no amount of stacking ever reaches opacity and the rope stays a grey speckle. Weighted
+outward, the body goes solid and only the silhouette frays — which is what the films actually
+look like, a dense dark mass shedding particulate along its edge. It costs 0.09ms a frame at
+two thousand live particles and no extra draw calls at all, being one `Points` system.
+
+**Apparition dilates the yard, not you.** Holding `Q` slows the world — the squad, their
+tracers, their brass, the dust — to 34% while you keep real time. That split is why the speed
+could come down from 30 m/s to 15 and still feel fast: relative to the men you are passing you
+are moving faster than before, while the input under your hand stays responsive. There is no
+duration limit; you rematerialise when you let go. Your own cooldowns and regeneration run on
+the yard's dilated clock rather than yours, because otherwise holding the key would have been
+a free full heal and a free cooldown reset for the price of one finger — twenty seconds of
+flight healed 180 health before that was fixed, and heals 1.6 now.
+
+**Flight is a glide, not free ascent.** Once the air hops are spent, holding `Space` cuts gravity
+to a sixth and floors the sink rate at 1.7 m/s, with enough air control to steer. You gain height
+with the three jumps and reposition with apparition; twenty seconds of held throttle tops out at
+7.5m and cannot leave the yard, so no second altitude clamp was needed.
+
+**The mood is uniforms only, and it was tuned against a histogram.** No geometry moved. The
+light rig comes down, the haze thickens, and the composite shader gains its own tone curve.
+
+Getting that curve right took three attempts and the first two are worth recording. Attempt one
+multiplied the whole frame down, which is the wrong operation: an overcast sky is emissive and
+already sits near the top of the range, so a flat multiply took the yard — the darker half of
+the image — to black while the sky kept its exposure. The result read as a skyline over a pit.
+Attempt two overcorrected into something brighter than the operator's daylight, which was
+readable and had no atmosphere at all.
+
+What settled it was measurement rather than taste: render twelve fixed stances through the real
+composite pass, histogram the bottom 62% of each frame — the part you have to walk through —
+separately from the sky, and search the parameter space for the *darkest* setting that keeps the
+walkable frame legible. The curve that won compresses highlights hard and shadows barely, which
+pulls the sky down toward the ground, then lifts the black point only where the image is already
+dark, so a fully shadowed interior does not turn milky.
+
+Measured against the operator's daylight: mean ground luminance 0.20 against 0.26, so the yard
+is a fifth darker; but 2.5% of the walkable frame falls below legibility against the operator's
+18%, and on the worst stance 4.6% against 41%. The lesson is that the chosen light rig is
+*dimmer* than the one that produced the unreadable frame. Darkness was never the problem — a
+flat multiply and a contrast stretch that clipped everything below 5% to zero was.
+
+**The incantation.** There is no voice actor and no audio files, so the whisper under every cast
+is built the way the guns are: three sibilant noise bursts on a falling bandpass with the Q wound
+up, staggered so it does not read as one flat hiss, over a low formant to put a throat behind it.
+It is nowhere near words. The ear files it as a whisper anyway.
 
 ## The map
 
@@ -206,6 +431,14 @@ before. The top of the slider is deliberately past what a mid-range machine will
 the dynamic resolution scaler will not rescue it either, since the cost is draw-call submission
 and CPU rather than fill.
 
+Dark Lord mode is close to free on top of that. The whole spell layer — cooldowns, the wand
+ember, the shield, the reveal shell, the silhouettes and the pooled cast lights — measures
+0.6 to 0.7ms per frame with a hundred hostiles all revealed at once, and costs exactly one
+extra draw call however many silhouettes are lit, because all of them are instances of one box
+in a single `InstancedMesh` sized to three per soldier. The status effects are cheaper than the
+AI they replace: a petrified or hoisted man returns from `updateEnemy` before perception,
+pathing or tactics run at all.
+
 Doubling the yard also doubles the per-cell work in two load-time passes. The navigation flood
 fill goes from 14,641 cells to 29,241, which is 14ms. The patrol-anchor scan over the upper deck
 needs a downward raycast per cell and would have been a 100ms-plus stall, so it samples at 2m
@@ -220,7 +453,17 @@ shadows off distant geometry, which on a yard with 120m sightlines is the more v
 
 ## Implementation notes
 
-Six things are worth knowing before modifying `index.html`.
+Seven things are worth knowing before modifying `index.html`.
+
+**`InstancedMesh.setColorAt` sizes its buffer from the wrong number in r128.** The
+implementation is `this.instanceColor === null && (this.instanceColor = new
+InstancedBufferAttribute(new Float32Array(3 * this.count), 3))` — `this.count` is the *draw*
+count, not `instanceMatrix.count`. The Homenum Revelio silhouette mesh starts at `count = 0` so
+that nothing draws until something is revealed, so the first `setColorAt` allocated a
+zero-length array; every colour write after that silently ran past the end, and because
+`instanceColor` was then non-null the shader still compiled with `USE_INSTANCING_COLOR` against
+an empty attribute. The draw call was issued every frame and produced no pixels whatsoever.
+Allocate `instanceColor` by hand at full capacity before anything touches it.
 
 **No environment map.** three.js renders a metal with nothing to reflect as near-black, so
 every material stays close to dielectric (`metalness` under about 0.2) and fakes metal
@@ -292,3 +535,87 @@ delay, which is how the collision and AI fixes were regression tested.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Round two
+
+Six changes, and in four of them the interesting part was not the feature.
+
+**Imperio is permanent.** A charmed man stays charmed until he dies, which quietly
+removed the thing the round's ending rested on: charms used to lapse, so a yard of
+nothing but puppets freed itself. Two obvious replacements were measured and both
+failed — releasing the last charmed man leaves a *cluster* of mutually unreachable
+puppets rather than one (21 of 25 kills, then stuck, twice), and releasing on a
+stall frees the whole yard fourteen seconds after you charm it, because measured
+legitimate gaps between puppet kills late in a war reach 130 seconds and no
+constant separates "slow" from "stopped". What replaced it is the honest version
+of the objective: **the round is won when nobody un-charmed is left standing.**
+"Kill everyone" was only ever a proxy for "leave nobody who opposes you", and the
+mode's win screen has always said *THE YARD IS YOURS*. So the debrief now counts
+men turned as well as men killed — you can win 0 + 25 of 25 without firing a
+curse in anger.
+
+**Imperio on a disarmed man gives him his rifle back.** It used to refuse the cast
+outright, because `disarmed` is set by four different spells, cleared nowhere, and
+the combat director drops disarmed men before they can ever be cleared to fire —
+so a disarmed puppet jogged around executing tactics forever without firing a
+shot. Refusing was legible but wrong. Now it re-arms him: `rig.add`, not `attach`,
+because `attach` preserves the world transform and the world transform is the
+rifle lying on the concrete twenty metres away. Verified by muzzle-to-glove
+distance — 0.605 m, exactly the carrying control.
+
+**The map had 121 m² of floor no soldier could reach.** A 60 m² pocket behind the
+west maze and 58 m² of the east container corridor, in every layout. At the
+player's 0.36 m radius only 45 m² is sealed, which is why it read as the soldiers
+refusing to follow rather than as geometry. Two causes. First, `addCollider`
+ignored the rotation its callers passed, so two pipe racks and a sandbag emplaced
+a 3.6 × 1.6 m box crosswise to a 1.0 × 4.5 m mesh — **the choke you walked into
+was not the choke that existed**, which is precisely why the blockage felt
+arbitrary. Second, the passes scatter clutter with no idea what the other passes
+have already sealed. Rather than hand-moving crates, the flood fill decides:
+after every prop is placed, flood from the spawn at the radius the AI actually
+navigates with, and delete the crates walling off any island it cannot reach.
+Crates only — ablation showed dropping every crate plus one mis-placed rack takes
+sealed floor from 121.3 m² to 1.1 m², while barrels and the rest of the clutter
+contribute nothing. Measured after: **0 m² sealed for a soldier, 0.1 for the
+player.** The audit runs before the contact shadows are derived, so a culled crate
+loses its ground skirt for free.
+
+**The garrison reaches 200.** Nothing structural was in the way — the placement
+pool supports over 3,000 patrol loops — but `ENEMY_MAX` was the *denominator* of
+the shooter-cap ramp, so doubling it would have silently dropped the Dark Lord's
+cap from 10 to 8 at a hundred hostiles and 8 to 7 at the default 25. Every
+existing round would have got quieter as a side effect. The ramp now has its own
+reference constant and 10–100 is bit-identical to what it always was. Two
+pre-existing leaks had to be fixed first: spell lights were never marked
+invisible on a reset (7 → 12 point lights after one round with Crucio held, and
+`NUM_POINT_LIGHTS` is baked into every lit shader in the scene), and the dynamic
+resolution floor was a one-way ratchet in closure state that no reset touched —
+one heavy round disabled dynamic resolution for the rest of the session,
+*including every later operator round*, while sitting at full resolution so
+nothing looked wrong.
+
+**Avada Kedavra: the flash was never the problem.** Measured through the real post
+chain, the two point lights ARE the entire flash — switch them off and the frame
+drops straight back to its unlit luminance. So raising them was the wrong lever;
+at peak 40 and 26 they put *half the frame* over the hot threshold and the yard
+disappeared into a milky green wash for two frames, which reads as a bug rather
+than as power. What was actually missing is that **the bolt was invisible**: the
+shipped tracer was 0.036 m thick, which subtends about one pixel at nine metres
+and none at twenty, and painted zero pixels at every brightness and distance
+tested. Brightness cannot fix a sub-pixel feature that the bright pass then
+downsamples by four. So the lights stay near their original values, and the
+upgrade is spent where it shows — three concentric tracers at 0.14 m carrying
+unclamped colour above the bloom threshold, a spark ring and a smoke shroud off
+the body, the wand itself lighting up (it lives in a separate scene with its own
+lights, so previously the yard flashed green and the thing casting the curse did
+not change at all), and a sound that is finally spatialised: it took no arguments
+whatsoever, so a curse at the far fence arrived at exactly the volume of one at
+your feet while a rifle over the same span falls away by thirty decibels.
+
+**Homenum Revelio has a shockwave.** A ring on the concrete driven from the same
+radius that decides which men the wave has reached — same function, same frame,
+so they cannot drift. Two things it needs to work: the band widens with distance,
+because a band that is constant in metres subtends fewer pixels as it travels and
+is gone by the time it reaches the men at the fence; and the centre is latched at
+the cast, because sprinting through a sweep dragged it 21.8 m sideways, which
+nothing showed while the only marker was a handful of sparks.
